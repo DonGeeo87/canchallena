@@ -14,16 +14,17 @@
 | Fase | Entregable | Criterio de salida |
 |------|-----------|---------------------|
 | **0. Documentación** | Brief, roadmap, flujo, modelo datos (ESTE repo) | Validado el flujo del bot con el usuario |
-| **1. MVP Reserva** | Bot WhatsApp + panel admin + PostgreSQL | 1 club real lo usa 2 semanas, reserva sin tocar al admin |
-| **2. Matchmaking valle** | Partido abierto + push por nivel + lista espera | Llena ≥1 cancha valle/día en el club piloto |
-| **3. Producto comercial** | Multi-tenant, facturación, Flow | ≥2 clubes pagando |
-| **4. No construir aún** | Torneos, ranking, POS, contabilidad | Solo con demanda real |
+| **1. MVP** | Bot WhatsApp + panel admin + PostgreSQL + **matchmaking valle** + multi-tenant | 1 club real lo usa 2 semanas, reserva sin tocar al admin, llena ≥1 cancha valle/día |
+| **2. Producto comercial** | Facturación, pasarela de pago, onboarding multi-club | ≥2 clubes pagando |
+| **3. No construir aún** | Torneos, ranking, POS, contabilidad | Solo con demanda real |
 
 ## Decisiones técnicas clave
 
 - **Sin NestJS ni BullMQ/Redis en el MVP.** Un Express con pocas rutas + un cron de recordatorios basta. Complejidad solo con necesidad real (regla MVP-first).
-- **Sin NestJS:** el dominio no lo justifica al inicio.
+- **Multi-tenant desde el inicio** (cada club con sus canchas/jugadores/horarios; tabla `clubs` ya está en el modelo).
+- **Matchmaking SÍ va en el MVP** (decisión 29-Ago-2026): el partido abierto valle se integra con la reserva.
 - **Matchmaking = filtro SOLO por nivel** (rango) + el jugador decide. NO exigir múltiples criterios (disponibilidad+radio+historial) que vacían el pool.
+- **Pago en persona, sin anticipos** (decisión 29-Ago-2026): MVP sin Flow/pasarela.
 
 ## Riesgos y mitigaciones
 

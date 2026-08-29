@@ -1,0 +1,16 @@
+{
+  "name": "canchallena",
+  "version": "0.1.0",
+  "private": true,
+  "description": "CanchaLlena - el organizador inteligente de partidos de padel. Bot WhatsApp que reserva y llena canchas.",
+  "workspaces": [
+    "api",
+    "app"
+  ],
+  "scripts": {
+    "dev:api": "npm run dev --workspace api",
+    "dev:app": "npm run dev --workspace app",
+    "build": "npm run build --workspace api && npm run build --workspace app",
+    "db:init": "npm run db:init --workspace api"
+  }
+}

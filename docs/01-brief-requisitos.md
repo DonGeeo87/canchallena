@@ -61,9 +61,9 @@ Después, encima de esa base, añadimos el **matchmaking para llenar las canchas
 - Horario típico: L-V 12:00–23:00; finde 10:00–23:00. (Configurable por club.)
 - Nivel: rango (ej. 2.5–3.5), NO puntaje exacto, para el matchmaking.
 
-## ⚠️ Preguntas abiertas
+## Decisiones tomadas (confirmadas 29-Ago-2026)
 
-1. ¿Cobra el anticipo por Flow/transferencia, o la reserva es sin pago por ahora?
-2. ¿El matchmaking valle entra en el mismo MVP o se valida primero el bot de reserva solo?
-3. ¿Multi-tenant desde el inicio o un solo club en el piloto?
-4. ¿Nombre final: CanchaLlena u otro?
+1. **Pago:** SIN anticipos. El pago es en persona (el jugador paga al llegar). MVP sin integración de cobro (sin Flow/pasarela).
+2. **Matchmaking:** SÍ se integra en el MVP (no fase 2). El partido abierto valle entra junto con la reserva.
+3. **Multi-tenant:** desde el inicio. La plataforma atiende N clubes, cada uno con sus canchas/jugadores/horarios.
+4. **Nombre:** CanchaLlena.
