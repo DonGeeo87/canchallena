@@ -4,7 +4,7 @@ import helmet from 'helmet'
 import { randomUUID } from 'node:crypto'
 import { db } from './_lib/db.js'
 import { requireAuth, signToken, type AuthUser } from './_lib/auth.js'
-import { armarPartido } from './_lib/engine.js'
+import { armarPartido, buscarReemplazo } from './_lib/engine.js'
 
 const app = express()
 app.use(helmet())
@@ -210,6 +210,96 @@ app.get(`${API_PREFIX}/public/club/:slug`, (req, res) => {
     ORDER BY s.starts_at
   `).all(club.id, `${today}%`)
   res.json({ club, courts, freeSlots })
+})
+
+// ---------- Responder invitación (paso 5 y 6 del prototipo) ----------
+app.post(`${API_PREFIX}/matchmaking/invite/:id/respond`, requireAuth, (req, res) => {
+  const status = String(req.body?.status ?? '')
+  const invId = String(req.params.id)
+  const inv = db.prepare(`SELECT mi.*, p.es_nuevo, p.name, p.categoria, om.slot_id, om.id AS open_match_id, c.club_id
+    FROM match_invitations mi
+    JOIN players p ON p.id = mi.player_id
+    JOIN open_matches om ON om.id = mi.open_match_id
+    JOIN slots sl ON sl.id = om.slot_id
+    JOIN courts c ON c.id = sl.court_id
+    WHERE mi.id = ?`).get(invId) as any
+  if (!inv) return res.status(404).json({ error: 'Invitación no encontrada' })
+  if (!['aceptada', 'rechazada'].includes(status)) {
+    return res.status(400).json({ error: 'status debe ser aceptada o rechazada' })
+  }
+  db.prepare(`UPDATE match_invitations SET status = ? WHERE id = ?`).run(status, invId)
+  if (status === 'rechazada') {
+    db.prepare(`UPDATE players SET ausencias = ausencias + 1 WHERE id = ?`).run(inv.player_id)
+  }
+
+  // Contar aceptadas
+  const aceptadas = db.prepare(`SELECT COUNT(*) AS n FROM match_invitations WHERE open_match_id = ? AND status='aceptada'`).get(inv.open_match_id) as any
+
+  if (status === 'rechazada') {
+    // Buscar reemplazo de nivel similar sin sacar al 6ª
+    const todosEnPartido = db.prepare(`SELECT player_id FROM match_invitations WHERE open_match_id = ?`).all(inv.open_match_id).map((r: any) => r.player_id)
+    const reemplazo = buscarReemplazo(inv.club_id, inv as any, todosEnPartido)
+    if (reemplazo) {
+      const invId = randomUUID()
+      db.prepare(`INSERT INTO match_invitations (id, open_match_id, player_id) VALUES (?, ?, ?)`).run(invId, inv.open_match_id, reemplazo.id)
+      return res.json({
+        rechazado: inv.name, status,
+        reemplazo: { id: reemplazo.id, name: reemplazo.name, categoria: reemplazo.categoria },
+        aceptadas: aceptadas.n,
+      })
+    }
+    return res.json({ rechazado: inv.name, status, reemplazo: null, aceptadas: aceptadas.n })
+  }
+
+  res.json({ status, aceptadas: aceptadas.n })
+})
+
+// ---------- Confirmar partido (paso 7) ----------
+app.post(`${API_PREFIX}/matchmaking/:id/confirm`, requireAuth, (req, res) => {
+  const match = db.prepare(`SELECT * FROM open_matches WHERE id = ?`).get(String(req.params.id)) as any
+  if (!match) return res.status(404).json({ error: 'Partido no encontrado' })
+  const aceptadas = db.prepare(`SELECT COUNT(*) AS n FROM match_invitations WHERE open_match_id = ? AND status='aceptada'`).get(match.id) as any
+  if (aceptadas.n < 4) return res.status(400).json({ error: `Faltan ${4 - aceptadas.n} confirmaciones` })
+
+  // Marcar partido confirmado + slot reservada + crear matches
+  db.prepare(`UPDATE open_matches SET status = 'confirmado' WHERE id = ?`).run(match.id)
+  db.prepare(`UPDATE slots SET status = 'reservada' WHERE id = ?`).run(match.slot_id)
+  res.json({ ok: true, status: 'confirmado', jugadores: 4 })
+})
+
+// ---------- Registrar resultado (paso 8) ----------
+app.post(`${API_PREFIX}/matches`, requireAuth, (req, res) => {
+  const { open_match_id, score, winner } = req.body
+  if (!open_match_id || !score || !winner) return res.status(400).json({ error: 'open_match_id, score y winner requeridos' })
+
+  const om = db.prepare(`SELECT * FROM open_matches WHERE id = ?`).get(open_match_id) as any
+  if (!om) return res.status(404).json({ error: 'Partido abierto no encontrado' })
+  const invs = db.prepare(`SELECT mi.player_id, p.name, p.es_nuevo FROM match_invitations mi JOIN players p ON p.id=mi.player_id WHERE mi.open_match_id=? AND mi.status='aceptada'`).all(open_match_id) as any[]
+  if (invs.length < 4) return res.status(400).json({ error: 'Faltan jugadores confirmados' })
+
+  const [a1, a2, b1, b2] = invs
+  const slot = db.prepare(`SELECT c.club_id FROM slots s JOIN courts c ON c.id = s.court_id WHERE s.id = ?`).get(om.slot_id) as any
+  const matchId = randomUUID()
+  db.prepare(`INSERT INTO matches (id, club_id, slot_id, team_a1, team_a2, team_b1, team_b2, score, winner, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'jugado')`)
+    .run(matchId, slot.club_id, om.slot_id, a1.player_id, a2.player_id, b1.player_id, b2.player_id, score, winner)
+
+  // Sumar ganados a los de la pareja ganadora, ausencias +1 a los que no jugaron? No: ausencias se cuenta en rechazo.
+  const ganadores = winner === 'A' ? [a1, a2] : [b1, b2]
+  for (const g of ganadores) db.prepare(`UPDATE players SET ganados = ganados + 1 WHERE id = ?`).run(g.player_id)
+
+  // Liberar cancha y cerrar partido
+  db.prepare(`UPDATE slots SET status = 'libre' WHERE id = ?`).run(om.slot_id)
+  db.prepare(`UPDATE open_matches SET status = 'cancelado' WHERE id = ?`).run(open_match_id)
+
+  res.status(201).json({ match_id: matchId, score, winner, ganadores: ganadores.map((g) => g.name) })
+})
+
+// ---------- Estadísticas (paso 9) ----------
+app.get(`${API_PREFIX}/stats`, requireAuth, (req, res) => {
+  const { clubId } = (req as any).authUser as AuthUser
+  const players = db.prepare(`SELECT id, name, categoria, nivel, ganados, ausencias, dias_sin_jugar FROM players WHERE club_id = ? ORDER BY ganados DESC`).all(clubId)
+  const partidosMes = db.prepare(`SELECT COUNT(*) AS n FROM matches WHERE club_id = ? AND status='jugado' AND strftime('%Y-%m', created_at) = strftime('%Y-%m', 'now')`).get(clubId) as any
+  res.json({ players, partidosMes: partidosMes.n })
 })
 
 // ---------- Webhook GoWA (entrada WhatsApp del bot) ----------
