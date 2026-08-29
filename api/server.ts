@@ -147,6 +147,64 @@ app.get(`${API_PREFIX}/admin/today`, requireAuth, (req, res) => {
   res.json({ courts, slots })
 })
 
+// ---------- Players (lista de socios del club) ----------
+app.get(`${API_PREFIX}/players`, requireAuth, (req, res) => {
+  const { clubId } = (req as any).authUser as AuthUser
+  const rows = db.prepare(`SELECT id, name, phone, level, created_at FROM players WHERE club_id = ? ORDER BY name`).all(clubId)
+  res.json({ players: rows })
+})
+
+// ---------- Matchmaking: listar partidos abiertos ----------
+app.get(`${API_PREFIX}/matchmaking`, requireAuth, (req, res) => {
+  const { clubId } = (req as any).authUser as AuthUser
+  const matches = db.prepare(`
+    SELECT om.*, c.name AS court_name
+    FROM open_matches om
+    JOIN slots s ON s.id = om.slot_id
+    JOIN courts c ON c.id = s.court_id
+    WHERE c.club_id = ? AND om.status = 'buscando'
+  `).all(clubId)
+  const enriched = matches.map((m: any) => {
+    const invites = db.prepare(`
+      SELECT mi.id, mi.status, p.name, p.level
+      FROM match_invitations mi JOIN players p ON p.id = mi.player_id
+      WHERE mi.open_match_id = ?
+    `).all(m.id)
+    const accepted = invites.filter((i: any) => i.status === 'aceptada').length
+    return { ...m, capacity: 4, invites, accepted }
+  })
+  res.json({ matches: enriched })
+})
+
+// ---------- Bookings: reservas del club ----------
+app.get(`${API_PREFIX}/bookings`, requireAuth, (req, res) => {
+  const { clubId } = (req as any).authUser as AuthUser
+  const rows = db.prepare(`
+    SELECT r.*, s.starts_at, s.ends_at, c.name AS court_name, p.name AS player_name, p.phone AS player_phone
+    FROM reservations r
+    JOIN slots s ON s.id = r.slot_id
+    JOIN courts c ON c.id = s.court_id
+    JOIN players p ON p.id = r.player_id
+    WHERE r.club_id = ? ORDER BY s.starts_at DESC
+  `).all(clubId)
+  res.json({ bookings: rows })
+})
+
+// ---------- Club público (micrositio) ----------
+app.get(`${API_PREFIX}/public/club/:slug`, (req, res) => {
+  const club = db.prepare(`SELECT id, name, slug, city, currency FROM clubs WHERE slug = ?`).get(req.params.slug) as any
+  if (!club) return res.status(404).json({ error: 'Club no encontrado' })
+  const courts = db.prepare(`SELECT id, name, price_per_slot FROM courts WHERE club_id = ? AND active = 1`).all(club.id)
+  const today = new Date().toISOString().slice(0, 10)
+  const freeSlots = db.prepare(`
+    SELECT s.id, s.starts_at, s.ends_at, s.price, c.name AS court_name
+    FROM slots s JOIN courts c ON c.id = s.court_id
+    WHERE c.club_id = ? AND s.starts_at LIKE ? AND s.status = 'libre'
+    ORDER BY s.starts_at
+  `).all(club.id, `${today}%`)
+  res.json({ club, courts, freeSlots })
+})
+
 // ---------- Webhook GoWA (entrada WhatsApp del bot) ----------
 app.post(`${API_PREFIX}/webhook/gowa`, (req, res) => {
   // Registra el payload entrante y responde 200 a GoWA. La lógica de intención se implementa en el bot (Sprint 3).
