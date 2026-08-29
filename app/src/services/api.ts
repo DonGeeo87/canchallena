@@ -32,7 +32,8 @@ interface ApiSlotRaw {
   court_name?: string; price_per_slot?: number;
 }
 interface ApiPlayerRaw {
-  id: string; name: string; phone: string; level: number | null;
+  id: string; name: string; phone: string; categoria?: string; es_nuevo?: number;
+  dias_sin_jugar?: number; nivel?: string; ganados?: number; ausencias?: number; level?: number | null;
 }
 interface ApiMatchRaw {
   id: string; slot_id: string; min_level: number | null; max_level: number | null; status: string;
@@ -89,17 +90,22 @@ function mapCourt(raw: ApiCourtRaw, slots: ApiSlotRaw[] = []): Court {
 }
 
 function mapPlayer(raw: ApiPlayerRaw): Player {
+  const cat = raw.categoria || '6ª';
+  const nivel = raw.nivel || 'Medio';
   return {
     id: raw.id,
     name: raw.name,
     level: raw.level ?? 3.0,
-    category: raw.level ? `Nivel ${raw.level.toFixed(1)}` : 'Sin nivel',
-    matchesCount: 0,
+    category: cat,                               // '3ª'..'6ª'
+    matchesCount: raw.ganados ?? 0,
     attendanceRate: 0,
     phone: raw.phone,
-    status: 'active',
-    avatarColor: '#7C3AED',
-  };
+    status: raw.es_nuevo ? 'active' : 'active',
+    avatarColor: raw.es_nuevo ? '#F59E0B' : '#7C3AED',
+    // campos extra del esquema chileno (accesibles si el componente los usa)
+    nivel,
+    dias_sin_jugar: raw.dias_sin_jugar ?? 0,
+  } as any;
 }
 
 function mapMatch(raw: ApiMatchRaw): OpenMatch {

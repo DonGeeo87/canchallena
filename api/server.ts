@@ -4,6 +4,7 @@ import helmet from 'helmet'
 import { randomUUID } from 'node:crypto'
 import { db } from './_lib/db.js'
 import { requireAuth, signToken, type AuthUser } from './_lib/auth.js'
+import { armarPartido } from './_lib/engine.js'
 
 const app = express()
 app.use(helmet())
@@ -102,36 +103,42 @@ app.post(`${API_PREFIX}/booking`, (req, res) => {
   })
 })
 
-// ---------- Matchmaking: crear partido abierto desde un slot libre ----------
+// ---------- Matchmaking: crear partido con el motor de emparejamiento ----------
 app.post(`${API_PREFIX}/matchmaking/open`, requireAuth, (req, res) => {
-  const { slot_id, min_level, max_level } = req.body
+  const { slot_id } = req.body
   if (!slot_id) return res.status(400).json({ error: 'slot_id requerido' })
   const slot = db.prepare(`SELECT * FROM slots WHERE id = ?`).get(slot_id) as any
   if (!slot) return res.status(404).json({ error: 'Slot no encontrado' })
   if (slot.status !== 'libre') return res.status(409).json({ error: 'Slot no está libre' })
 
-  const id = randomUUID()
-  db.prepare(`INSERT INTO open_matches (id, slot_id, min_level, max_level) VALUES (?, ?, ?, ?)`)
-    .run(id, slot_id, min_level ?? 2.0, max_level ?? 4.0)
-  db.prepare(`UPDATE slots SET status = 'partido_abierto' WHERE id = ?`).run(slot_id)
-
-  // Candidatos: jugadores del club en el rango de nivel (solo por nivel, el jugador decide)
   const club = db.prepare(`SELECT club_id FROM courts WHERE id = ?`).get(slot.court_id) as any
-  const candidates = db.prepare(`
-    SELECT id, name, phone, level FROM players
-    WHERE club_id = ? AND level BETWEEN ? AND ?
-  `).all(club.club_id, min_level ?? 2.0, max_level ?? 4.0)
+  const partido = armarPartido(club.club_id)
+  if (!partido) return res.status(400).json({ error: 'No hay suficientes jugadores (mínimo 4)' })
 
-  // Crear invitaciones
-  const invited = []
-  for (const p of candidates) {
-    const invId = randomUUID()
+  const matchId = randomUUID()
+  const slotId = slot_id
+  db.prepare(`INSERT INTO open_matches (id, slot_id) VALUES (?, ?)`).run(matchId, slotId)
+  db.prepare(`UPDATE slots SET status = 'partido_abierto' WHERE id = ?`).run(slotId)
+
+  // Registrar las 4 invitaciones
+  const invId = []
+  const [a1, a2] = partido.parejaA
+  const [b1, b2] = partido.parejaB
+  const cuatro = [a1, a2, b1, b2]
+  for (const p of cuatro) {
+    const iv = randomUUID()
     db.prepare(`INSERT INTO match_invitations (id, open_match_id, player_id) VALUES (?, ?, ?)`)
-      .run(invId, id, p.id)
-    invited.push(p)
+      .run(iv, matchId, p.id)
+    invId.push({ id: iv, player: p.name, categoria: p.categoria, es_nuevo: p.es_nuevo })
   }
 
-  res.status(201).json({ open_match_id: id, slot: slot_id, candidates: invited.length, invited })
+  res.status(201).json({
+    open_match_id: matchId,
+    slot: slotId,
+    parejaA: partido.parejaA.map((p) => ({ name: p.name, categoria: p.categoria, es_nuevo: p.es_nuevo })),
+    parejaB: partido.parejaB.map((p) => ({ name: p.name, categoria: p.categoria, es_nuevo: p.es_nuevo })),
+    invitaciones: invId,
+  })
 })
 
 // ---------- Tablero admin (HOY) ----------
@@ -150,7 +157,7 @@ app.get(`${API_PREFIX}/admin/today`, requireAuth, (req, res) => {
 // ---------- Players (lista de socios del club) ----------
 app.get(`${API_PREFIX}/players`, requireAuth, (req, res) => {
   const { clubId } = (req as any).authUser as AuthUser
-  const rows = db.prepare(`SELECT id, name, phone, level, created_at FROM players WHERE club_id = ? ORDER BY name`).all(clubId)
+  const rows = db.prepare(`SELECT id, name, phone, categoria, es_nuevo, dias_sin_jugar, nivel, ganados, ausencias FROM players WHERE club_id = ? ORDER BY dias_sin_jugar DESC`).all(clubId)
   res.json({ players: rows })
 })
 
@@ -166,7 +173,7 @@ app.get(`${API_PREFIX}/matchmaking`, requireAuth, (req, res) => {
   `).all(clubId)
   const enriched = matches.map((m: any) => {
     const invites = db.prepare(`
-      SELECT mi.id, mi.status, p.name, p.level
+      SELECT mi.id, mi.status, p.name, p.categoria, p.es_nuevo
       FROM match_invitations mi JOIN players p ON p.id = mi.player_id
       WHERE mi.open_match_id = ?
     `).all(m.id)

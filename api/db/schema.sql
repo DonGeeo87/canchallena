@@ -43,7 +43,28 @@ CREATE TABLE IF NOT EXISTS players (
   club_id    TEXT NOT NULL REFERENCES clubs(id) ON DELETE CASCADE,
   name       TEXT NOT NULL,
   phone      TEXT NOT NULL,                 -- número WhatsApp (identificador del bot)
-  level      REAL,                          -- 2.0..7.0 (nullable hasta auto-eval)
+  categoria  TEXT DEFAULT '6ª',            -- categoría chilena: 3ª, 4ª, 5ª, 6ª
+  es_nuevo   INTEGER DEFAULT 0,            -- 1 = 6ª/nuevo, prioridad SIEMPRE juega
+  dias_sin_jugar INTEGER DEFAULT 0,        -- días sin jugar (prioriza al que más espera)
+  nivel      TEXT DEFAULT 'Medio',         -- 'Nuevo' | 'Medio' | 'Avanzado'
+  ganados    INTEGER DEFAULT 0,            -- partidos ganados (registro del marcador)
+  ausencias  INTEGER DEFAULT 0,            -- no-shows / rechazos
+  created_at TEXT DEFAULT (datetime('now'))
+);
+
+-- Partido confirmado con resultado (paso 8 y 9 del prototipo)
+CREATE TABLE IF NOT EXISTS matches (
+  id         TEXT PRIMARY KEY,
+  club_id    TEXT NOT NULL REFERENCES clubs(id) ON DELETE CASCADE,
+  slot_id    TEXT NOT NULL REFERENCES slots(id) ON DELETE CASCADE,
+  team_a1    TEXT REFERENCES players(id),
+  team_a2    TEXT REFERENCES players(id),
+  team_b1    TEXT REFERENCES players(id),
+  team_b2    TEXT REFERENCES players(id),
+  score      TEXT,                          -- '6-3, 6-4'
+  winner     TEXT,                          -- 'A' | 'B'
+  status     TEXT DEFAULT 'programado',    -- programado | jugado | cancelado
+  duration   TEXT DEFAULT '1h30',
   created_at TEXT DEFAULT (datetime('now'))
 );
 
