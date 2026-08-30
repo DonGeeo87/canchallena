@@ -5,7 +5,7 @@ import { randomUUID } from 'node:crypto'
 import { db } from './_lib/db.js'
 import { requireAuth, signToken, type AuthUser } from './_lib/auth.js'
 import { armarPartido, buscarReemplazo, matchScore, rankCandidates } from './_lib/engine.js'
-import { sendWhatsApp, sendPoll, buildInviteMessage, buildReplacementMessage, getGowaConfig } from './_lib/gowa.js'
+import { sendWhatsApp, buildInviteMessage, buildReplacementMessage, getGowaConfig } from './_lib/gowa.js'
 import { getSession, setSession, deleteSession, isDuplicateMessage, markMessageProcessed, logBotEvent, tryReserveSlot } from './_lib/bot_session.js'
 
 const app = express()
@@ -561,8 +561,10 @@ app.post(`${API_PREFIX}/webhook/gowa`, async (req, res) => {
       }
       const lineas = abiertos.map((m: any, i: number) =>
         `${i + 1}. ${m.court_name} · ${new Date(m.starts_at).toLocaleDateString('es-CL', { weekday: 'long', day: 'numeric' })} ${new Date(m.starts_at).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })} h · ${m.aceptados}/4`)
-      await sendWhatsApp(jid, `Hola ${player.name}! 🎾\nPartidos abiertos con cupos:\n\n${lineas.join('\n')}\n\nPuedes unirte a uno respondiendo su número, o reservar una cancha propia.`)
+      await sendWhatsApp(jid, `Hola ${player.name}! 🎾\nPartidos abiertos con cupos:\n\n${lineas.join('\n')}\n\nResponde el número del partido para unirte, o escribe "menu" para volver.`)
       markMessageProcessed(messageId, fromDigits, 'buscar_partido')
+      // Guardar sesión de "elegir partido" para que la siguiente respuesta (número) se una
+      setSession(fromDigits, player.club_id, 'choosing_match', { abiertos })
       return
     } else if (text === '3') { // Mis reservas
       deleteSession(fromDigits)
@@ -574,21 +576,25 @@ app.post(`${API_PREFIX}/webhook/gowa`, async (req, res) => {
         WHERE r.player_id = ? ORDER BY s.starts_at DESC LIMIT 5
       `).all(player.id)
       if (!misRes.length) {
-        await sendWhatsApp(jid, `Hola ${player.name}! 🎾\nAún no tienes reservas. ¿Quieres ver qué canchas hay disponibles?`)
+        await sendWhatsApp(jid, `Hola ${player.name}! 🎾\nAún no tienes reservas. Escribe "menu" para volver, o "canchas" para ver disponibilidad.`)
         markMessageProcessed(messageId, fromDigits, 'mis_reservas_vacio')
         return
       }
       const lineasRes = misRes.map((r: any) =>
         `• ${r.court_name} · ${new Date(r.starts_at).toLocaleDateString('es-CL', { weekday: 'long', day: 'numeric' })} ${new Date(r.starts_at).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })} h · ${r.status === 'confirmada' ? '✅ confirmada' : r.status}`)
-      await sendWhatsApp(jid, `Hola ${player.name}! 🎾\nTus reservas:\n\n${lineasRes.join('\n')}`)
+      await sendWhatsApp(jid, `Hola ${player.name}! 🎾\nTus reservas:\n\n${lineasRes.join('\n')}\n\nResponde 0 o "menu" para volver al menú.`)
       markMessageProcessed(messageId, fromDigits, 'mis_reservas')
       return
     } else if (text === '4') { // Mi disponibilidad → cae a disponibilidad
       deleteSession(fromDigits)
     } else if (text === '0' || text.includes('MENU') || text.includes('AYUDA')) {
-      // mostrar menú de nuevo
+      // Volver a mostrar el menú
+      setSession(fromDigits, player.club_id, 'menu', null)
+      await sendWhatsApp(jid, `🎾 ${player.name}, ¿qué deseas hacer?\n\n1 · Reservar cancha\n2 · Buscar partido\n3 · Mis reservas\n4 · Mi disponibilidad`)
+      markMessageProcessed(messageId, fromDigits, 'menu')
+      return
     } else {
-      await sendWhatsApp(jid, `No entendí esa opción 🤔\nResponde 1, 2, 3 o 4.`)
+      await sendWhatsApp(jid, `No entendí esa opción 🤔\nResponde 1, 2, 3, 4 o escribe "menu".`)
       return
     }
   }
@@ -610,6 +616,33 @@ app.post(`${API_PREFIX}/webhook/gowa`, async (req, res) => {
 
   // ── FLUJO 2: Sin invitación pendiente → consulta disponibilidad o selección de cancha.
 
+  // "0" o "menu" en cualquier sub-flujo → volver al menú principal
+  if (text === '0' || text === 'MENU' || text === 'VOLVER') {
+    setSession(fromDigits, player.club_id, 'menu', null)
+    await sendWhatsApp(jid, `🎾 ${player.name}, ¿qué deseas hacer?\n\n1 · Reservar cancha\n2 · Buscar partido\n3 · Mis reservas\n4 · Mi disponibilidad`)
+    markMessageProcessed(messageId, fromDigits, 'menu')
+    return
+  }
+
+  // ¿El jugador tiene una sesión de "elegir partido" activa? (después de ver partidos abiertos)
+  const sesionMatch = getSession(fromDigits)
+  if (sesionMatch && sesionMatch.state === 'choosing_match' && sesionMatch.payload) {
+    const abiertos = JSON.parse(sesionMatch.payload).abiertos as any[]
+    const numSel = parseInt(text.replace(/[^0-9]/g, ''), 10)
+    const seleccionado = numSel >= 1 && numSel <= abiertos.length ? abiertos[numSel - 1] : null
+    if (!seleccionado) {
+      await sendWhatsApp(jid, `No entendí el número del partido 🤔\nEscribe el número que ves en la lista, o "menu" para volver.`)
+      return
+    }
+    // Crear invitación pendiente para este jugador en ese partido abierto
+    db.prepare(`INSERT INTO match_invitations (id, open_match_id, player_id, status) VALUES (?, ?, ?, 'pendiente')`)
+      .run(randomUUID(), seleccionado.id, player.id)
+    deleteSession(fromDigits)
+    await sendWhatsApp(jid, `¡Listo, ${player.name}! 🎾 Te agregamos al partido de ${seleccionado.court_name}.\nConfirma con SI o NO.\nRecuerda: responde "menu" cuando quieras volver.`)
+    markMessageProcessed(messageId, fromDigits, 'unirse_partido')
+    return
+  }
+
   // ¿El jugador tiene una sesión activa de selección (le ofrecimos canchas)?
   const sesion = getSession(fromDigits)
   if (sesion && sesion.state === 'choosing_court' && sesion.payload) {
@@ -622,7 +655,7 @@ app.post(`${API_PREFIX}/webhook/gowa`, async (req, res) => {
     // Número inválido / opción no ofrecida → pedir elección válida
     if (!seleccionada) {
       const opciones = ofertadas.map((s: any, i: number) => `${i + 1}. ${s.court_name}`).join('\n')
-      await sendWhatsApp(jid, `Hmm, no entendí esa opción 🤔\nEstas son las disponibles:\n\n${opciones}\n\nResponde solo el número.`)
+      await sendWhatsApp(jid, `Hmm, no entendí esa opción 🤔\nEstas son las disponibles:\n\n${opciones}\n\nResponde solo el número, o "menu" para volver.`)
       return
     }
 
@@ -630,7 +663,7 @@ app.post(`${API_PREFIX}/webhook/gowa`, async (req, res) => {
     const ok = tryReserveSlot(player.club_id, seleccionada.id, player.id, 'bot', seleccionada.price)
     if (!ok) {
       deleteSession(fromDigits)
-      await sendWhatsApp(jid, `😔 Ese horario fue reservado justo antes que tú.\nElige otra opción y te la confirmo.`)
+      await sendWhatsApp(jid, `😔 Ese horario fue reservado justo antes que tú.\nElige otra opción, o "menu" para volver.`)
       return
     }
     deleteSession(fromDigits)
@@ -687,10 +720,7 @@ app.post(`${API_PREFIX}/webhook/gowa`, async (req, res) => {
       `${i + 1}. ${s.court_name} · ${new Date(s.starts_at).toLocaleDateString('es-CL', { weekday: 'long', day: 'numeric' })}, ${new Date(s.starts_at).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })} h · $${Math.round(s.price).toLocaleString('es-CL')}`
     )
     await sendWhatsApp(jid,
-      `Hola ${player.name}! 🎾\nHoy no hay canchas libres, pero estas son las próximas disponibles:\n\n${lineasSig.join('\n')}\n\nResponde el número o toca la opción que te guste.`)
-    const opcionesSig = siguientes.map((s: any) =>
-      `${new Date(s.starts_at).toLocaleDateString('es-CL', { weekday: 'short', day: 'numeric' })} · ${new Date(s.starts_at).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })} h · ${s.court_name}`)
-    await sendPoll(jid.replace('@s.whatsapp.net', ''), 'Próximas canchas disponibles:', opcionesSig)
+      `Hola ${player.name}! 🎾\nHoy no hay canchas libres, pero estas son las próximas disponibles:\n\n${lineasSig.join('\n')}\n\nEscribe el número que te interese, o "menu" para volver.`)
     return
   }
 
@@ -702,12 +732,7 @@ app.post(`${API_PREFIX}/webhook/gowa`, async (req, res) => {
   const lineas = libres.map((s: any, i: number) =>
     `${i + 1}. ${s.court_name} · ${new Date(s.starts_at).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })} h · $${Math.round(s.price).toLocaleString('es-CL')}`
   )
-  const cuerpo = `Hola ${player.name}! 🎾\nEsto es lo que hay disponible HOY:\n\n${lineas.join('\n')}\n\nResponde el número o toca la opción que te guste.`
-  const opciones = libres.map((s: any) => `${new Date(s.starts_at).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })} · ${s.court_name}`)
-
-  // Enviar texto + botonera (poll)
-  await sendWhatsApp(jid, cuerpo)
-  await sendPoll(jid.replace('@s.whatsapp.net', ''), '¿Qué cancha te interesa?', opciones)
+  await sendWhatsApp(jid, `Hola ${player.name}! 🎾\nEsto es lo que hay disponible HOY:\n\n${lineas.join('\n')}\n\nEscribe el número que te interese (ej. "1"), o "menu" para volver.`)
 })
 
 app.listen(PORT, () => {
