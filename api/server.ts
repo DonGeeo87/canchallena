@@ -507,7 +507,8 @@ app.post(`${API_PREFIX}/webhook/gowa`, async (req, res) => {
         FROM open_matches om
         JOIN slots s ON s.id = om.slot_id
         JOIN courts c ON c.id = s.court_id
-        WHERE om.status='buscando' ORDER BY s.starts_at LIMIT 5
+        WHERE om.status='buscando' AND c.club_id = ?
+        ORDER BY s.starts_at LIMIT 5
       `).all(player.club_id)
       if (!abiertos.length) {
         await sendWhatsApp(jid, `Hola ${player.name}! 🎾\nAhora no hay partidos abiertos buscando jugadores.\nTe avisamos cuando se arme uno con tu nivel.`)
