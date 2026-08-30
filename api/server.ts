@@ -322,6 +322,12 @@ app.get(`${API_PREFIX}/stats`, requireAuth, (req, res) => {
 // Procesa dos flujos:
 //   1) Respuesta SI/NO a una invitación de partido PENDIENTE.
 //   2) Consulta de disponibilidad (canchas/horarios libres) cuando NO hay invitación pendiente.
+// ── FLUJO 2: Sin invitación pendiente → el socio consulta disponibilidad o selecciona una cancha.
+// Mini-estado en memoria a nivel de módulo: qué canchas se le ofrecieron a cada jugador,
+// para que cuando responda con número/opción, se cree la reserva real.
+// (Vive en memoria; se pierde al reiniciar el container — aceptable para el MVP.)
+const sesionDisponibilidad = new Map<string, any[]>() // phone → slots libres ofrecidos
+
 app.post(`${API_PREFIX}/webhook/gowa`, async (req, res) => {
   res.status(200).json({ ok: true })
   const msg = req.body as any
@@ -377,7 +383,33 @@ app.post(`${API_PREFIX}/webhook/gowa`, async (req, res) => {
     return
   }
 
-  // ── FLUJO 2: Sin invitación pendiente → el socio consulta disponibilidad (canchas/horarios).
+  // ── FLUJO 2: Sin invitación pendiente → el socio consulta disponibilidad o selecciona una cancha.
+
+  // Primero: ¿es una selección de una lista ya ofrecida? (ej "1", "cancha 1", "19:30")
+  const ofertadas = sesionDisponibilidad.get(fromDigits)
+  if (ofertadas && ofertadas.length) {
+    // Buscar opción por número o por coincidencia de texto
+    const numSel = parseInt(text.replace(/[^0-9]/g, ''), 10)
+    const seleccionada = numSel >= 1 && numSel <= ofertadas.length
+      ? ofertadas[numSel - 1]
+      : ofertadas.find((s: any) => text.includes(s.court_name.toUpperCase()) || text.includes(String(new Date(s.starts_at).getHours())))
+    if (seleccionada) {
+      const slotId = seleccionada.id
+      // Marcar slot reservada y crear la reserva real
+      db.prepare(`UPDATE slots SET status='reservada' WHERE id=?`).run(slotId)
+      const rid = randomUUID()
+      db.prepare(`INSERT INTO reservations (id, club_id, slot_id, player_id, status, source, price) VALUES (?, ?, ?, ?, 'confirmada', 'bot', ?)`)
+        .run(rid, player.club_id, slotId, player.id, seleccionada.price)
+      sesionDisponibilidad.delete(fromDigits)
+      const esHoy = new Date(seleccionada.starts_at).toISOString().slice(0, 10) === new Date().toISOString().slice(0, 10)
+      const fechaReserva = esHoy
+        ? `Hoy ${new Date(seleccionada.starts_at).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })} h`
+        : `${new Date(seleccionada.starts_at).toLocaleDateString('es-CL', { weekday: 'long', day: 'numeric', month: 'long' })}, ${new Date(seleccionada.starts_at).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })} h`
+      await sendWhatsApp(jid,
+        `✅ Reserva CONFIRMADA\n\n📅 ${fechaReserva}\n🏟 ${seleccionada.court_name}\n💰 $${Math.round(seleccionada.price).toLocaleString('es-CL')}\n\nTe avisamos cuando falté un cupo para completar el partido.`)
+      return
+    }
+  }
 
   // Palabras clave de consulta de disponibilidad
   const consulta = /(CANCHA|PARTIDO|HORARIO|DISPONIB|JUEGO|RESERVAR|QUE HAY|HOLA|OPCIO)/.test(text)
@@ -393,15 +425,48 @@ app.post(`${API_PREFIX}/webhook/gowa`, async (req, res) => {
   `).all(player.club_id, `${today}%`)
 
   if (!libres.length) {
-    await sendWhatsApp(jid, `Hola ${player.name}! 🎾\nHoy no hay canchas libres disponibles.\nTe avisamos cuando se abra un cupo.`)
+    // No hay nada HOY → buscar la próxima disponibilidad dentro de los próximos 7 días.
+    // (No cortar el flujo: se ofrece la siguiente cancha disponible.)
+    const hoy = new Date()
+    const proximos7 = Array.from({ length: 7 }, (_, i) => {
+      const d = new Date(hoy)
+      d.setDate(hoy.getDate() + i + 1)
+      return d.toISOString().slice(0, 10)
+    })
+    const siguientes = db.prepare(`
+      SELECT s.id, s.starts_at, s.price, c.name AS court_name
+      FROM slots s JOIN courts c ON c.id = s.court_id
+      WHERE c.club_id = ?
+        AND s.status = 'libre'
+        AND (${proximos7.map(() => "s.starts_at LIKE ?").join(' OR ')})
+      ORDER BY s.starts_at LIMIT 6
+    `).all(player.club_id, ...proximos7.map((d) => `${d}%`))
+
+    if (!siguientes.length) {
+      await sendWhatsApp(jid, `Hola ${player.name}! 🎾\nNo hay canchas libres en los próximos días.\nTe avisamos cuando se abra un cupo.`)
+      return
+    }
+
+    sesionDisponibilidad.set(fromDigits, siguientes)
+    const lineasSig = siguientes.map((s: any, i: number) =>
+      `${i + 1}. ${s.court_name} · ${new Date(s.starts_at).toLocaleDateString('es-CL', { weekday: 'long', day: 'numeric' })}, ${new Date(s.starts_at).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })} h · $${Math.round(s.price).toLocaleString('es-CL')}`
+    )
+    await sendWhatsApp(jid,
+      `Hola ${player.name}! 🎾\nHoy no hay canchas libres, pero estas son las próximas disponibles:\n\n${lineasSig.join('\n')}\n\nResponde el número o toca la opción que te guste.`)
+    const opcionesSig = siguientes.map((s: any) =>
+      `${new Date(s.starts_at).toLocaleDateString('es-CL', { weekday: 'short', day: 'numeric' })} · ${new Date(s.starts_at).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })} h · ${s.court_name}`)
+    await sendPoll(jid.replace('@s.whatsapp.net', ''), 'Próximas canchas disponibles:', opcionesSig)
     return
   }
+
+  // Guardar lo ofrecido para la siguiente respuesta
+  sesionDisponibilidad.set(fromDigits, libres)
 
   // Construir mensaje legible con canchas disponibles
   const lineas = libres.map((s: any, i: number) =>
     `${i + 1}. ${s.court_name} · ${new Date(s.starts_at).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })} h · $${Math.round(s.price).toLocaleString('es-CL')}`
   )
-  const cuerpo = `Hola ${player.name}! 🎾\nEsto es lo que hay disponible HOY:\n\n${lineas.join('\n')}\n\n¿Quieres reservar uno?`
+  const cuerpo = `Hola ${player.name}! 🎾\nEsto es lo que hay disponible HOY:\n\n${lineas.join('\n')}\n\nResponde el número o toca la opción que te guste.`
   const opciones = libres.map((s: any) => `${new Date(s.starts_at).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })} · ${s.court_name}`)
 
   // Enviar texto + botonera (poll)
