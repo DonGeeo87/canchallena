@@ -6,6 +6,7 @@ import { db } from './_lib/db.js'
 import { requireAuth, signToken, type AuthUser } from './_lib/auth.js'
 import { armarPartido, buscarReemplazo } from './_lib/engine.js'
 import { sendWhatsApp, sendPoll, buildInviteMessage, buildReplacementMessage, getGowaConfig } from './_lib/gowa.js'
+import { getSession, setSession, deleteSession, isDuplicateMessage, markMessageProcessed, logBotEvent, tryReserveSlot } from './_lib/bot_session.js'
 
 const app = express()
 app.use(helmet())
@@ -319,15 +320,6 @@ app.get(`${API_PREFIX}/stats`, requireAuth, (req, res) => {
 })
 
 // ---------- Webhook GoWA (entrada WhatsApp del bot) ----------
-// Procesa dos flujos:
-//   1) Respuesta SI/NO a una invitación de partido PENDIENTE.
-//   2) Consulta de disponibilidad (canchas/horarios libres) cuando NO hay invitación pendiente.
-// ── FLUJO 2: Sin invitación pendiente → el socio consulta disponibilidad o selecciona una cancha.
-// Mini-estado en memoria a nivel de módulo: qué canchas se le ofrecieron a cada jugador,
-// para que cuando responda con número/opción, se cree la reserva real.
-// (Vive en memoria; se pierde al reiniciar el container — aceptable para el MVP.)
-const sesionDisponibilidad = new Map<string, any[]>() // phone → slots libres ofrecidos
-
 app.post(`${API_PREFIX}/webhook/gowa`, async (req, res) => {
   res.status(200).json({ ok: true })
   const msg = req.body as any
@@ -343,10 +335,18 @@ app.post(`${API_PREFIX}/webhook/gowa`, async (req, res) => {
   if (!from || !rawText) return
   const text = rawText.toUpperCase()
 
+  // ── P0: Idempotencia — si este mensaje ya fue procesado, no repetir acción.
+  const messageId = msg?.id || p?.id || ''
+  if (messageId && isDuplicateMessage(messageId)) {
+    logBotEvent(from, 'duplicado', { messageId })
+    return
+  }
+
   const fromDigits = from.replace(/[^0-9]/g, '')
   const player = db.prepare(`SELECT id, name, club_id FROM players WHERE REPLACE(REPLACE(REPLACE(phone,'+',''),' ',''),'-','') = ? OR phone LIKE ?`).get(fromDigits, `%${fromDigits.slice(-9)}%`) as any
   if (!player) return
   const jid = `${fromDigits}@s.whatsapp.net`
+  logBotEvent(fromDigits, 'mensaje', { text: rawText.slice(0, 50) })
 
   // ── FLUJO 1: ¿Hay una invitación pendiente para este jugador? Entonces SI/NO.
   const inv = db.prepare(`SELECT mi.id, mi.open_match_id, mi.status FROM match_invitations mi WHERE mi.player_id = ? AND mi.status='pendiente' ORDER BY mi.created_at DESC LIMIT 1`).get(player.id) as any
@@ -355,17 +355,19 @@ app.post(`${API_PREFIX}/webhook/gowa`, async (req, res) => {
     const isSi = text === 'S' || text.includes('SI') || text === 'SÍ' || text === 'YES'
     const isNo = text === 'N' || text.includes('NO')
     if (isSi) {
-      // Marcar aceptada YA MISMO (no hay otro jugador en el sistema que cuente antes)
       db.prepare(`UPDATE match_invitations SET status='aceptada' WHERE id=?`).run(inv.id)
+      logBotEvent(fromDigits, 'invitacion_si', { invId: inv.id })
       const aceptadas = db.prepare(`SELECT COUNT(*) AS n FROM match_invitations WHERE open_match_id=? AND status='aceptada'`).get(inv.open_match_id) as any
       const faltan = 4 - aceptadas.n
       const cupoMsg = faltan > 0
         ? `Listo, confirmamos tu lugar 🎾 (${aceptadas.n}/4 confirmados).\nFaltan ${faltan} jugador${faltan === 1 ? '' : 'es'} para completar.`
         : `¡Partido COMPLETO! 🎾\nLos 4 jugadores confirmados.\nNos vemos en la cancha. 🏟️`
       await sendWhatsApp(jid, `¡Listo, ${player.name}! ${cupoMsg}`)
+      markMessageProcessed(messageId, fromDigits, 'invitacion_si')
     } else if (isNo) {
       db.prepare(`UPDATE match_invitations SET status='rechazada' WHERE id=?`).run(inv.id)
       db.prepare(`UPDATE players SET ausencias = ausencias + 1 WHERE id = ?`).run(player.id)
+      logBotEvent(fromDigits, 'invitacion_no', { invId: inv.id })
       const todosEnPartido = db.prepare(`SELECT player_id FROM match_invitations WHERE open_match_id = ?`).all(inv.open_match_id).map((r: any) => r.player_id)
       const salio = db.prepare(`SELECT * FROM players WHERE id = ?`).get(player.id) as any
       const reemplazo = buscarReemplazo(salio.club_id, salio, todosEnPartido)
@@ -378,37 +380,47 @@ app.post(`${API_PREFIX}/webhook/gowa`, async (req, res) => {
         reemplazoMsg = `\nYa estamos contactando a otro jugador para tu lugar.`
       }
       await sendWhatsApp(jid, `Sin problema, ${player.name} 🙌${reemplazoMsg}\n¡Te avisamos si sale otro partido con tu nivel! 👋`)
+      markMessageProcessed(messageId, fromDigits, 'invitacion_no')
     }
     // Si respondió otra cosa distinta a SI/NO con invitación pendiente, no hacer nada.
     return
   }
 
-  // ── FLUJO 2: Sin invitación pendiente → el socio consulta disponibilidad o selecciona una cancha.
+  // ── FLUJO 2: Sin invitación pendiente → consulta disponibilidad o selección de cancha.
 
-  // Primero: ¿es una selección de una lista ya ofrecida? (ej "1", "cancha 1", "19:30")
-  const ofertadas = sesionDisponibilidad.get(fromDigits)
-  if (ofertadas && ofertadas.length) {
-    // Buscar opción por número o por coincidencia de texto
+  // ¿El jugador tiene una sesión activa de selección (le ofrecimos canchas)?
+  const sesion = getSession(fromDigits)
+  if (sesion && sesion.state === 'choosing_court' && sesion.payload) {
+    const ofertadas = JSON.parse(sesion.payload) as any[]
     const numSel = parseInt(text.replace(/[^0-9]/g, ''), 10)
     const seleccionada = numSel >= 1 && numSel <= ofertadas.length
       ? ofertadas[numSel - 1]
       : ofertadas.find((s: any) => text.includes(s.court_name.toUpperCase()) || text.includes(String(new Date(s.starts_at).getHours())))
-    if (seleccionada) {
-      const slotId = seleccionada.id
-      // Marcar slot reservada y crear la reserva real
-      db.prepare(`UPDATE slots SET status='reservada' WHERE id=?`).run(slotId)
-      const rid = randomUUID()
-      db.prepare(`INSERT INTO reservations (id, club_id, slot_id, player_id, status, source, price) VALUES (?, ?, ?, ?, 'confirmada', 'bot', ?)`)
-        .run(rid, player.club_id, slotId, player.id, seleccionada.price)
-      sesionDisponibilidad.delete(fromDigits)
-      const esHoy = new Date(seleccionada.starts_at).toISOString().slice(0, 10) === new Date().toISOString().slice(0, 10)
-      const fechaReserva = esHoy
-        ? `Hoy ${new Date(seleccionada.starts_at).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })} h`
-        : `${new Date(seleccionada.starts_at).toLocaleDateString('es-CL', { weekday: 'long', day: 'numeric', month: 'long' })}, ${new Date(seleccionada.starts_at).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })} h`
-      await sendWhatsApp(jid,
-        `✅ Reserva CONFIRMADA\n\n📅 ${fechaReserva}\n🏟 ${seleccionada.court_name}\n💰 $${Math.round(seleccionada.price).toLocaleString('es-CL')}\n\nTe avisamos cuando falté un cupo para completar el partido.`)
+
+    // Número inválido / opción no ofrecida → pedir elección válida
+    if (!seleccionada) {
+      const opciones = ofertadas.map((s: any, i: number) => `${i + 1}. ${s.court_name}`).join('\n')
+      await sendWhatsApp(jid, `Hmm, no entendí esa opción 🤔\nEstas son las disponibles:\n\n${opciones}\n\nResponde solo el número.`)
       return
     }
+
+    // ── P0: Reserva anti-doble (transacción atómica) — solo un ganador por slot.
+    const ok = tryReserveSlot(player.club_id, seleccionada.id, player.id, 'bot', seleccionada.price)
+    if (!ok) {
+      deleteSession(fromDigits)
+      await sendWhatsApp(jid, `😔 Ese horario fue reservado justo antes que tú.\nElige otra opción y te la confirmo.`)
+      return
+    }
+    deleteSession(fromDigits)
+    logBotEvent(fromDigits, 'reserva_ok', { slot: seleccionada.id })
+    const esHoy = new Date(seleccionada.starts_at).toISOString().slice(0, 10) === new Date().toISOString().slice(0, 10)
+    const fechaReserva = esHoy
+      ? `Hoy ${new Date(seleccionada.starts_at).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })} h`
+      : `${new Date(seleccionada.starts_at).toLocaleDateString('es-CL', { weekday: 'long', day: 'numeric', month: 'long' })}, ${new Date(seleccionada.starts_at).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })} h`
+    await sendWhatsApp(jid,
+      `✅ Reserva CONFIRMADA\n\n📅 ${fechaReserva}\n🏟 ${seleccionada.court_name}\n💰 $${Math.round(seleccionada.price).toLocaleString('es-CL')}\n\nTe avisamos cuando falté un cupo para completar el partido.`)
+    markMessageProcessed(messageId, fromDigits, 'reserva_cancha')
+    return
   }
 
   // Palabras clave de consulta de disponibilidad
@@ -447,7 +459,8 @@ app.post(`${API_PREFIX}/webhook/gowa`, async (req, res) => {
       return
     }
 
-    sesionDisponibilidad.set(fromDigits, siguientes)
+    setSession(fromDigits, player.club_id, 'choosing_court', siguientes)
+    markMessageProcessed(messageId, fromDigits, 'disponibilidad_proxima')
     const lineasSig = siguientes.map((s: any, i: number) =>
       `${i + 1}. ${s.court_name} · ${new Date(s.starts_at).toLocaleDateString('es-CL', { weekday: 'long', day: 'numeric' })}, ${new Date(s.starts_at).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })} h · $${Math.round(s.price).toLocaleString('es-CL')}`
     )
@@ -459,8 +472,9 @@ app.post(`${API_PREFIX}/webhook/gowa`, async (req, res) => {
     return
   }
 
-  // Guardar lo ofrecido para la siguiente respuesta
-  sesionDisponibilidad.set(fromDigits, libres)
+  // Guardar lo ofrecido para la siguiente respuesta (sesión persistente con expiración)
+  setSession(fromDigits, player.club_id, 'choosing_court', libres)
+  markMessageProcessed(messageId, fromDigits, 'disponibilidad_hoy')
 
   // Construir mensaje legible con canchas disponibles
   const lineas = libres.map((s: any, i: number) =>

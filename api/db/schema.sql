@@ -111,3 +111,35 @@ CREATE TABLE IF NOT EXISTS match_invitations (
 CREATE INDEX IF NOT EXISTS idx_slots_court_time       ON slots (court_id, starts_at);
 CREATE INDEX IF NOT EXISTS idx_reservations_status    ON reservations (status);
 CREATE INDEX IF NOT EXISTS idx_messages_player_club   ON players (club_id, phone);
+
+-- ============================================================
+-- P0 — Robustez (Sprint V0.2)
+-- Sesiones del bot persistentes (reemplaza el Map en memoria)
+CREATE TABLE IF NOT EXISTS bot_sessions (
+  phone      TEXT PRIMARY KEY,
+  club_id    TEXT,
+  state      TEXT DEFAULT 'idle',       -- idle | choosing_court
+  payload    TEXT,                       -- JSON: slots libres ofrecidos al jugador
+  expires_at TEXT,
+  updated_at TEXT DEFAULT (datetime('now'))
+);
+
+-- Idempotencia del webhook: evita procesar dos veces el mismo mensaje
+CREATE TABLE IF NOT EXISTS processed_messages (
+  message_id   TEXT PRIMARY KEY,
+  phone        TEXT NOT NULL,
+  intent       TEXT,
+  processed_at TEXT DEFAULT (datetime('now'))
+);
+
+-- Eventos del bot (observabilidad)
+CREATE TABLE IF NOT EXISTS bot_events (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  phone      TEXT,
+  event      TEXT NOT NULL,   -- mensaje | intent | reserva | invitacion | error
+  data       TEXT,
+  created_at TEXT DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_sessions_phone ON bot_sessions (phone);
+CREATE INDEX IF NOT EXISTS idx_events_phone   ON bot_events (phone, created_at);
