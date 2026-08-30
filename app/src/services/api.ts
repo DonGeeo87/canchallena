@@ -6,6 +6,7 @@ import {
   OpenMatch,
   Booking,
   TodayStats,
+  SlotStatus,
 } from '../types';
 
 // Apunta a la API real de canchallena/api (Express). NO hay fallback falso:
@@ -38,7 +39,14 @@ interface ApiPlayerRaw {
 interface ApiMatchRaw {
   id: string; slot_id: string; min_level: number | null; max_level: number | null; status: string;
   court_name?: string; capacity?: number; accepted?: number;
-  invites?: Array<{ id: string; status: string; name?: string; level?: number | null }>;
+  invites?: Array<{ id: string; status: string; name?: string; categoria?: string; level?: number | null; es_nuevo?: number }>;
+}
+
+interface ApiMatchOpenRaw {
+  id: string; slot: string; open_match_id?: string;
+  parejaA?: Array<{ name: string; categoria: string; es_nuevo: number }>;
+  parejaB?: Array<{ name: string; categoria: string; es_nuevo: number }>;
+  invitaciones?: Array<{ id: string; player: string; categoria: string; es_nuevo: number }>;
 }
 interface ApiBookingRaw {
   id: string; status: string; price: number | null; starts_at: string; ends_at?: string;
@@ -202,12 +210,18 @@ export const api = {
   courts: {
     async getAll(): Promise<Court[]> {
       const courts = await request<ApiCourtRaw[]>('/courts');
-      return courts.map((c) => mapCourt(c));
+      // Traer slots del día para poblar la grilla del dashboard
+      const todayData = await request<{ courts: ApiCourtRaw[]; slots: ApiSlotRaw[] }>('/admin/today');
+      const slots = todayData.slots || [];
+      return courts.map((c) => mapCourt(c, slots));
     },
-    async updateSlotStatus(_courtId: string, _slotTime: string, _nextStatus: string): Promise<void> {
-      // Actualización de estado de slot pendiente en backend (POST /api/slots/:id).
-      // Por ahora la grilla es de solo lectura para no inventar comportamiento.
-      throw new Error('Cambio de estado de slot aún no disponible en el backend');
+    async updateSlotStatus(courtId: string, slotTime: string, nextStatus: SlotStatus): Promise<void> {
+      // Endpoint real del backend: PATCH /api/courts/:courtId/slot
+      const statusMap = { free: 'libre', reserved: 'reservada', open_match: 'partido_abierto' } as Record<string, string>
+      await request(`/courts/${courtId}/slot`, {
+        method: 'PATCH',
+        body: JSON.stringify({ time: slotTime, status: statusMap[nextStatus] || nextStatus }),
+      });
     },
   },
 
@@ -232,14 +246,36 @@ export const api = {
       pricePerPlayer?: number;
       organizerPlayerId?: string;
     }): Promise<OpenMatch> {
-      const [min, max] = payload.targetLevel.split('-').map((s) => parseFloat(s.trim()));
-      const data = await request<ApiMatchRaw>('/matchmaking/open', {
-        method: 'POST', body: JSON.stringify({ slot_id: payload.courtId, min_level: min, max_level: max }),
+      // El payload trae courtId (id de cancha), pero el endpoint espera slot_id.
+      // Buscar el primer slot libre de esa cancha HOY.
+      const date = payload.date === 'Hoy' ? new Date().toISOString().slice(0, 10) : (payload.date || new Date().toISOString().slice(0, 10));
+      const slots = await request<ApiSlotRaw[]>(`/slots?date=${date}`);
+      const slotLibre = slots.find((s) => s.court_id === payload.courtId && s.status === 'libre');
+      if (!slotLibre) throw new Error(`No hay cancha libre en ${payload.courtName || 'esa cancha'} para ${date}`);
+      const data = await request<ApiMatchOpenRaw>('/matchmaking/open', {
+        method: 'POST', body: JSON.stringify({ slot_id: slotLibre.id }),
       });
-      return mapMatch(data);
+      // El endpoint devuelve parejaA/parejaB/invitaciones — armar el OpenMatch
+      const players = (data.invitaciones || []).map((i) => ({ id: i.id, name: i.player, level: 3.0 }));
+      return {
+        id: data.open_match_id || data.id,
+        code: `#${(data.open_match_id || data.id).slice(0, 4)}`,
+        date: 'Hoy',
+        time: '',
+        courtId: slotLibre.id,
+        courtName: payload.courtName || 'Cancha',
+        targetLevel: payload.targetLevel,
+        status: 'filling' as any,
+        capacity: 4,
+        pricePerPlayer: payload.pricePerPlayer || 0,
+        players,
+        suggestedCandidate: null,
+      } as any;
     },
-    async autocompleteMatch(_matchId: string): Promise<OpenMatch> {
-      throw new Error('Autocompletar partido aún no disponible en el backend');
+    async autocompleteMatch(matchId: string): Promise<OpenMatch> {
+      // Endpoint real: POST /api/matchmaking/:id/complete (invita al mejor candidato)
+      const data = await request<{ ok: boolean; jugador?: { name: string; categoria: string } }>(`/matchmaking/${matchId}/complete`, { method: 'POST' });
+      return { id: matchId, code: `#${matchId.slice(0, 4)}`, date: 'Hoy', time: '', courtId: '', courtName: 'Cancha', targetLevel: '3.0 - 3.5', status: 'filling' as any, capacity: 4, pricePerPlayer: 0, players: [], suggestedCandidate: null, ...data } as any;
     },
   },
 

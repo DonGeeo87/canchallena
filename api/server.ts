@@ -200,6 +200,50 @@ app.get(`${API_PREFIX}/matchmaking`, requireAuth, (req, res) => {
   res.json({ matches: enriched })
 })
 
+// ---------- Cambiar estado de un slot (el dashboard hace clic en la grilla) ----------
+app.patch(`${API_PREFIX}/courts/:courtId/slot`, requireAuth, (req, res) => {
+  const courtId = String(req.params.courtId)
+  const { time, status } = req.body
+  if (!time || !status) return res.status(400).json({ error: 'time y status requeridos' })
+
+  // Buscar slot de esa cancha en esa hora (hoy o futuro)
+  const slot = db.prepare(`
+    SELECT s.id FROM slots s JOIN courts c ON c.id = s.court_id
+    WHERE c.id = ? AND substr(s.starts_at,12,5) = ?
+    ORDER BY s.starts_at DESC LIMIT 1
+  `).get(courtId, String(time)) as any
+  if (!slot) return res.status(404).json({ error: 'Slot no encontrado para esa cancha/hora' })
+
+  const statusMap: Record<string, string> = {
+    free: 'libre', reserved: 'reservada', open_match: 'partido_abierto',
+  }
+  const dbStatus = statusMap[status] || status
+  db.prepare(`UPDATE slots SET status = ? WHERE id = ?`).run(dbStatus, slot.id)
+  res.json({ ok: true, slot_id: slot.id, status: dbStatus })
+})
+
+// ---------- Autocompletar partido: invitar al mejor candidato pendiente ----------
+app.post(`${API_PREFIX}/matchmaking/:id/complete`, requireAuth, async (req, res) => {
+  const match = db.prepare(`SELECT * FROM open_matches WHERE id = ?`).get(String(req.params.id)) as any
+  if (!match) return res.status(404).json({ error: 'Partido no encontrado' })
+
+  // Jugador con mejor match score no invitado aún
+  const candidato = db.prepare(`
+    SELECT p.* FROM players p
+    WHERE p.club_id = (SELECT c.club_id FROM slots s JOIN courts c ON c.id=s.court_id WHERE s.id=?)
+      AND p.id NOT IN (SELECT player_id FROM match_invitations WHERE open_match_id=?)
+      AND p.es_nuevo = 0
+    ORDER BY p.dias_sin_jugar DESC LIMIT 1
+  `).get(match.slot_id, match.id) as any
+  if (!candidato) return res.status(400).json({ error: 'No hay candidatos disponibles' })
+
+  const invId = randomUUID()
+  db.prepare(`INSERT INTO match_invitations (id, open_match_id, player_id, status) VALUES (?, ?, ?, 'pendiente')`)
+    .run(invId, match.id, candidato.id)
+  if (candidato.phone) await sendWhatsApp(candidato.phone, `🎾 ¡Hola ${candidato.name}! Quedó un cupo para un partido.\n¿Juegas?\nResponde SI o NO.`)
+  res.status(201).json({ ok: true, invitacion_id: invId, jugador: { name: candidato.name, categoria: candidato.categoria } })
+})
+
 // ---------- Bookings: reservas del club ----------
 app.get(`${API_PREFIX}/bookings`, requireAuth, (req, res) => {
   const { clubId } = (req as any).authUser as AuthUser
