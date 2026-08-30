@@ -143,3 +143,9 @@ CREATE TABLE IF NOT EXISTS bot_events (
 
 CREATE INDEX IF NOT EXISTS idx_sessions_phone ON bot_sessions (phone);
 CREATE INDEX IF NOT EXISTS idx_events_phone   ON bot_events (phone, created_at);
+
+-- Configuración global del bot (interruptor on/off persistente)
+CREATE TABLE IF NOT EXISTS bot_config (
+  key   TEXT PRIMARY KEY,
+  value TEXT
+);

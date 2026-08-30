@@ -5,6 +5,17 @@ import { db } from './db.js'
 // Robustez P0 — sesiones persistentes, idempotencia y eventos
 // ============================================================
 
+// ── Interruptor global del bot (off = no responde a nadie) ──
+export function isBotEnabled(): boolean {
+  const row = db.prepare(`SELECT value FROM bot_config WHERE key='bot_enabled'`).get() as any
+  return row?.value !== 'false' // default: true
+}
+
+export function setBotEnabled(enabled: boolean): void {
+  db.prepare(`INSERT INTO bot_config (key, value) VALUES ('bot_enabled', ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`)
+    .run(enabled ? 'true' : 'false')
+}
+
 // ── Sesiones persistentes (reemplaza el Map en memoria) ──
 const SESSION_TTL_MS = 10 * 60 * 1000 // 10 minutos
 

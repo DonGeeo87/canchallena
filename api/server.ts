@@ -6,7 +6,7 @@ import { db } from './_lib/db.js'
 import { requireAuth, signToken, type AuthUser } from './_lib/auth.js'
 import { armarPartido, buscarReemplazo, matchScore, rankCandidates } from './_lib/engine.js'
 import { sendWhatsApp, buildInviteMessage, buildReplacementMessage, getGowaConfig } from './_lib/gowa.js'
-import { getSession, setSession, deleteSession, isDuplicateMessage, markMessageProcessed, logBotEvent, tryReserveSlot } from './_lib/bot_session.js'
+import { getSession, setSession, deleteSession, isDuplicateMessage, markMessageProcessed, logBotEvent, tryReserveSlot, isBotEnabled, setBotEnabled } from './_lib/bot_session.js'
 
 const app = express()
 app.use(helmet())
@@ -485,6 +485,24 @@ app.post(`${API_PREFIX}/webhook/gowa`, async (req, res) => {
   const text = rawText.trim().toUpperCase()
   if (!from || !text) return
 
+  const fromDigits = from.replace(/[^0-9]/g, '')
+  const jid = `${fromDigits}@s.whatsapp.net`
+  const textoAdmin = text
+
+  // Comandos del admin (solo para números de confianza) para pausar/reactivar
+  const ADMIN_PHONES = ['56994912874', '56939688275', '56953316685'] // papá, DonGeeo, mamá
+  const esAdmin = ADMIN_PHONES.includes(fromDigits)
+  if (esAdmin && (textoAdmin === 'BOT OFF' || textoAdmin === 'PAUSAR BOT')) { setBotEnabled(false); await sendWhatsApp(jid, '🔕 Bot pausado. Para reactivar escribe BOT ON.'); logBotEvent(fromDigits, 'bot_paused', {}); return }
+  if (esAdmin && (textoAdmin === 'BOT ON' || textoAdmin === 'ACTIVAR BOT')) { setBotEnabled(true); await sendWhatsApp(jid, '🔔 Bot activado.'); logBotEvent(fromDigits, 'bot_activated', {}); return }
+
+  // ── INTERRUPTOR GLOBAL ──
+  // Si el bot está pausado, no responder a nadie (solo responde 200 para ack).
+  if (!isBotEnabled()) {
+    if (esAdmin && (textoAdmin === 'BOT ON' || textoAdmin === 'ACTIVAR BOT')) { setBotEnabled(true); logBotEvent(fromDigits, 'bot_activated', {}); return }
+    console.log(`[bot-pausado] ignorado mensaje de ${fromDigits}`)
+    return
+  }
+
   // ── P0: Idempotencia — si este mensaje ya fue procesado, no repetir acción.
   const messageId = msg?.id || p?.id || ''
   if (messageId && isDuplicateMessage(messageId)) {
@@ -492,10 +510,8 @@ app.post(`${API_PREFIX}/webhook/gowa`, async (req, res) => {
     return
   }
 
-  const fromDigits = from.replace(/[^0-9]/g, '')
   const player = db.prepare(`SELECT id, name, club_id FROM players WHERE REPLACE(REPLACE(REPLACE(phone,'+',''),' ',''),'-','') = ? OR phone LIKE ?`).get(fromDigits, `%${fromDigits.slice(-9)}%`) as any
   if (!player) return
-  const jid = `${fromDigits}@s.whatsapp.net`
   logBotEvent(fromDigits, 'mensaje', { text: rawText.slice(0, 50) })
 
   // ── FLUJO 1: ¿Hay una invitación pendiente para este jugador? Entonces SI/NO.
