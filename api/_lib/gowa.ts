@@ -1,8 +1,9 @@
 // Integración GoWA — envío de mensajes WhatsApp (patrón del skill whatsapp-gateway/gowa-session-ops)
-// Config desde env. En dev apunta al VPS; en prod es intra-container http://gowa:3000
-const GOWA_URL = process.env.GOWA_URL || 'http://localhost:8086'
+// En dev: la API local (Windows) usa la URL pública del VPS.
+// En prod (container en el mismo VPS): GOWA_URL=http://gowa:3000
+const GOWA_URL = process.env.GOWA_URL || 'https://wa.dongeeo87.site'
 const GOWA_AUTH = process.env.GOWA_AUTH || 'admin:G0w4D0nGeeo87!'
-const GOWA_DEVICE_ID = process.env.GOWA_DEVICE_ID || 'DonGeeo87' // en prod: device del club (chip nuevo)
+const GOWA_DEVICE_ID = process.env.GOWA_DEVICE_ID || 'DonGeeo87' // device de prueba (número principal)
 
 export function getGowaConfig() {
   return { url: GOWA_URL, auth: GOWA_AUTH, deviceId: GOWA_DEVICE_ID }

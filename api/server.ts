@@ -125,8 +125,10 @@ app.post(`${API_PREFIX}/matchmaking/open`, requireAuth, async (req, res) => {
   const [a1, a2] = partido.parejaA
   const [b1, b2] = partido.parejaB
   const cuatro = [a1, a2, b1, b2]
-  const fecha = new Date(slot.starts_at).toLocaleDateString('es-CL', { weekday: 'long', day: 'numeric', month: 'long' })
+  const date = new Date(slot.starts_at).toLocaleDateString('es-CL', { weekday: 'long', day: 'numeric', month: 'long' })
   const hora = new Date(slot.starts_at).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })
+  const court = db.prepare(`SELECT name FROM courts WHERE id = ?`).get(slot.court_id) as any
+  const courtName = court?.name || 'cancha'
   const resultados: any[] = []
 
   // Determinar pareja de cada jugador para el mensaje
@@ -139,7 +141,7 @@ app.post(`${API_PREFIX}/matchmaking/open`, requireAuth, async (req, res) => {
     const iv = randomUUID()
     db.prepare(`INSERT INTO match_invitations (id, open_match_id, player_id) VALUES (?, ?, ?)`).run(iv, matchId, p.id)
     const pareja = parejaDe(p.id)
-    const msg = buildInviteMessage(p.name, pareja.name, pareja.categoria, fecha, hora, slot.court_id)
+    const msg = buildInviteMessage(p.name, pareja.name, pareja.categoria, date, hora, courtName)
     // Enviar por GoWA (device del club). No bloquea la creación si falla el envío.
     const sent = await sendWhatsApp(p.phone, msg)
     resultados.push({ id: iv, player: p.name, categoria: p.categoria, es_nuevo: p.es_nuevo, whatsapp: sent.ok ? 'enviado' : `fallo: ${sent.error}` })
@@ -328,8 +330,9 @@ app.post(`${API_PREFIX}/webhook/gowa`, async (req, res) => {
   const text = String(msg?.text || msg?.message || '').trim().toUpperCase().replace(/[^A-Z0-9ÁÉÍÓÚÑ]/g, '')
   if (!from || !text) return
 
-  // Buscar invitaciones pendientes de ese jugador
-  const player = db.prepare(`SELECT id FROM players WHERE phone LIKE ?`).get(`%${from.replace(/[^0-9]/g, '').slice(-10)}%`) as any
+  // Buscar invitaciones pendientes de ese jugador (número normalizado, ej 569...
+  const fromDigits = from.replace(/[^0-9]/g, '')
+  const player = db.prepare(`SELECT id FROM players WHERE REPLACE(REPLACE(REPLACE(phone,'+',''),' ',''),'-','') = ? OR phone LIKE ?`).get(fromDigits, `%${fromDigits.slice(-9)}%`) as any
   if (!player) return
 
   const inv = db.prepare(`SELECT mi.id FROM match_invitations mi WHERE mi.player_id = ? AND mi.status='pendiente' ORDER BY mi.created_at DESC LIMIT 1`).get(player.id) as any
