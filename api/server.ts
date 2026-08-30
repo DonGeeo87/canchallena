@@ -320,20 +320,34 @@ app.get(`${API_PREFIX}/stats`, requireAuth, (req, res) => {
 })
 
 // ---------- Webhook GoWA (entrada WhatsApp del bot) ----------
+// Helper: el texto ya pide directamente disponibilidad (canchas/partidos/horarios/reservar).
+// Si es así, NO mostrar el menú (evita interceptar una consulta natural con el saludo).
+function consultaPrevia(text: string): boolean {
+  return /(CANCHA|PARTIDO|HORARIO|DISPONIB|JUEGO|RESERVAR|QUE HAY)/.test(text)
+}
+
 app.post(`${API_PREFIX}/webhook/gowa`, async (req, res) => {
   res.status(200).json({ ok: true })
   const msg = req.body as any
-  console.log(`[webhook] payload: ${JSON.stringify(msg).slice(0, 400)}`)
-  // Solo eventos de MENSAJE entrante; ignorar ack/read/reaction/presencia
+  const p = msg?.payload || msg || {}
+
+  // ── FILTRO DE RUIDO ──
+  // Ignorar: eventos no-message (ack/reaction/presence), mensajes propios, y grupos (@g.us).
   if (msg?.event && msg.event !== 'message') return
   if (msg?.is_from_me === true) return
+  const chatId = String(p?.chat_id || msg?.chat_id || '')
+  // chat_id de grupo termina en @g.us; un DM es @s.whatsapp.net
+  if (chatId.includes('@g.us')) return
 
-  // El texto y remitente reales están anidados en msg.payload (formato GoWA v9)
-  const p = msg?.payload || msg || {}
+  // Solo loggear mensajes relevantes (DM del bot), no todo el tráfico
   const from = p?.from || msg?.from || msg?.sender?.id || p?.chat_id || ''
-  const rawText = String(p?.body || p?.text || msg?.body || msg?.text || msg?.message || '').trim()
-  if (!from || !rawText) return
-  const text = rawText.toUpperCase()
+  const rawText = String(p?.body || p?.text || msg?.body || msg?.text || msg?.message || '')
+  if (from && rawText.trim()) {
+    console.log(`[webhook] DM ${from} (${msg?.id || p?.id || 'no-id'}): ${rawText.trim().slice(0, 50)}`)
+  }
+
+  const text = rawText.trim().toUpperCase()
+  if (!from || !text) return
 
   // ── P0: Idempotencia — si este mensaje ya fue procesado, no repetir acción.
   const messageId = msg?.id || p?.id || ''
@@ -383,6 +397,77 @@ app.post(`${API_PREFIX}/webhook/gowa`, async (req, res) => {
       markMessageProcessed(messageId, fromDigits, 'invitacion_no')
     }
     // Si respondió otra cosa distinta a SI/NO con invitación pendiente, no hacer nada.
+    return
+  }
+
+  // ── MENÚ PRINCIPAL (V0.5) ──
+  // Si el socio tiene una sesión de menú activa, interpretar 1/2/3/4.
+  const sesionMenu = getSession(fromDigits)
+  if (sesionMenu && sesionMenu.state === 'menu') {
+    if (text === '1') { // Reservar cancha → disponibilidad
+      deleteSession(fromDigits)
+      // cae al flujo de disponibilidad de abajo
+    } else if (text === '2') { // Buscar partido → mostrar partidos abiertos
+      deleteSession(fromDigits)
+      const abiertos = db.prepare(`
+        SELECT om.id, c.name AS court_name, s.starts_at, om.status,
+          (SELECT COUNT(*) FROM match_invitations mi WHERE mi.open_match_id=om.id AND mi.status='aceptada') AS aceptados
+        FROM open_matches om
+        JOIN slots s ON s.id = om.slot_id
+        JOIN courts c ON c.id = s.court_id
+        WHERE om.status='buscando' ORDER BY s.starts_at LIMIT 5
+      `).all(player.club_id)
+      if (!abiertos.length) {
+        await sendWhatsApp(jid, `Hola ${player.name}! 🎾\nAhora no hay partidos abiertos buscando jugadores.\nTe avisamos cuando se arme uno con tu nivel.`)
+        markMessageProcessed(messageId, fromDigits, 'buscar_partido_vacio')
+        return
+      }
+      const lineas = abiertos.map((m: any, i: number) =>
+        `${i + 1}. ${m.court_name} · ${new Date(m.starts_at).toLocaleDateString('es-CL', { weekday: 'long', day: 'numeric' })} ${new Date(m.starts_at).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })} h · ${m.aceptados}/4`)
+      await sendWhatsApp(jid, `Hola ${player.name}! 🎾\nPartidos abiertos con cupos:\n\n${lineas.join('\n')}\n\nPuedes unirte a uno respondiendo su número, o reservar una cancha propia.`)
+      markMessageProcessed(messageId, fromDigits, 'buscar_partido')
+      return
+    } else if (text === '3') { // Mis reservas
+      deleteSession(fromDigits)
+      const misRes = db.prepare(`
+        SELECT r.id, c.name AS court_name, s.starts_at, r.status
+        FROM reservations r
+        JOIN slots s ON s.id = r.slot_id
+        JOIN courts c ON c.id = s.court_id
+        WHERE r.player_id = ? ORDER BY s.starts_at DESC LIMIT 5
+      `).all(player.id)
+      if (!misRes.length) {
+        await sendWhatsApp(jid, `Hola ${player.name}! 🎾\nAún no tienes reservas. ¿Quieres ver qué canchas hay disponibles?`)
+        markMessageProcessed(messageId, fromDigits, 'mis_reservas_vacio')
+        return
+      }
+      const lineasRes = misRes.map((r: any) =>
+        `• ${r.court_name} · ${new Date(r.starts_at).toLocaleDateString('es-CL', { weekday: 'long', day: 'numeric' })} ${new Date(r.starts_at).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })} h · ${r.status === 'confirmada' ? '✅ confirmada' : r.status}`)
+      await sendWhatsApp(jid, `Hola ${player.name}! 🎾\nTus reservas:\n\n${lineasRes.join('\n')}`)
+      markMessageProcessed(messageId, fromDigits, 'mis_reservas')
+      return
+    } else if (text === '4') { // Mi disponibilidad → cae a disponibilidad
+      deleteSession(fromDigits)
+    } else if (text === '0' || text.includes('MENU') || text.includes('AYUDA')) {
+      // mostrar menú de nuevo
+    } else {
+      await sendWhatsApp(jid, `No entendí esa opción 🤔\nResponde 1, 2, 3 o 4.`)
+      return
+    }
+  }
+
+  // ¿El socio pidió ver el menú? (saludo, ayuda, menú, opciones)
+  const pideMenu = /(MENU|AYUDA|OPCIO|INICIO)/.test(text) || (text === 'HOLA')
+  if (pideMenu && !consultaPrevia(text)) {
+    setSession(fromDigits, player.club_id, 'menu', null)
+    await sendWhatsApp(jid,
+      `🎾 Hola, ${player.name}!\n\n¿Qué deseas hacer?\n\n` +
+      `1 · Reservar cancha\n` +
+      `2 · Buscar partido\n` +
+      `3 · Mis reservas\n` +
+      `4 · Mi disponibilidad\n\n` +
+      `También puedes escribirme directo, por ejemplo: "canchas hoy" o "quiero jugar".`)
+    markMessageProcessed(messageId, fromDigits, 'menu')
     return
   }
 

@@ -21,6 +21,17 @@ services:
     networks:
       - proxy-network
 
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+    container_name: canchallena-web
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3019:80"
+    networks:
+      - proxy-network
+
 volumes:
   canchallena_data:
 
