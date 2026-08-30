@@ -5,6 +5,7 @@ import { randomUUID } from 'node:crypto'
 import { db } from './_lib/db.js'
 import { requireAuth, signToken, type AuthUser } from './_lib/auth.js'
 import { armarPartido, buscarReemplazo } from './_lib/engine.js'
+import { sendWhatsApp, buildInviteMessage, buildReplacementMessage, getGowaConfig } from './_lib/gowa.js'
 
 const app = express()
 app.use(helmet())
@@ -104,7 +105,7 @@ app.post(`${API_PREFIX}/booking`, (req, res) => {
 })
 
 // ---------- Matchmaking: crear partido con el motor de emparejamiento ----------
-app.post(`${API_PREFIX}/matchmaking/open`, requireAuth, (req, res) => {
+app.post(`${API_PREFIX}/matchmaking/open`, requireAuth, async (req, res) => {
   const { slot_id } = req.body
   if (!slot_id) return res.status(400).json({ error: 'slot_id requerido' })
   const slot = db.prepare(`SELECT * FROM slots WHERE id = ?`).get(slot_id) as any
@@ -120,24 +121,37 @@ app.post(`${API_PREFIX}/matchmaking/open`, requireAuth, (req, res) => {
   db.prepare(`INSERT INTO open_matches (id, slot_id) VALUES (?, ?)`).run(matchId, slotId)
   db.prepare(`UPDATE slots SET status = 'partido_abierto' WHERE id = ?`).run(slotId)
 
-  // Registrar las 4 invitaciones
-  const invId = []
+  // Registrar las 4 invitaciones y enviar por WhatsApp
   const [a1, a2] = partido.parejaA
   const [b1, b2] = partido.parejaB
   const cuatro = [a1, a2, b1, b2]
+  const fecha = new Date(slot.starts_at).toLocaleDateString('es-CL', { weekday: 'long', day: 'numeric', month: 'long' })
+  const hora = new Date(slot.starts_at).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })
+  const resultados: any[] = []
+
+  // Determinar pareja de cada jugador para el mensaje
+  const parejaDe = (id: string) => {
+    const otros = cuatro.filter((p) => p.id !== id)
+    return otros[0]
+  }
+
   for (const p of cuatro) {
     const iv = randomUUID()
-    db.prepare(`INSERT INTO match_invitations (id, open_match_id, player_id) VALUES (?, ?, ?)`)
-      .run(iv, matchId, p.id)
-    invId.push({ id: iv, player: p.name, categoria: p.categoria, es_nuevo: p.es_nuevo })
+    db.prepare(`INSERT INTO match_invitations (id, open_match_id, player_id) VALUES (?, ?, ?)`).run(iv, matchId, p.id)
+    const pareja = parejaDe(p.id)
+    const msg = buildInviteMessage(p.name, pareja.name, pareja.categoria, fecha, hora, slot.court_id)
+    // Enviar por GoWA (device del club). No bloquea la creación si falla el envío.
+    const sent = await sendWhatsApp(p.phone, msg)
+    resultados.push({ id: iv, player: p.name, categoria: p.categoria, es_nuevo: p.es_nuevo, whatsapp: sent.ok ? 'enviado' : `fallo: ${sent.error}` })
   }
 
   res.status(201).json({
     open_match_id: matchId,
     slot: slotId,
+    gowa_device: getGowaConfig().deviceId,
     parejaA: partido.parejaA.map((p) => ({ name: p.name, categoria: p.categoria, es_nuevo: p.es_nuevo })),
     parejaB: partido.parejaB.map((p) => ({ name: p.name, categoria: p.categoria, es_nuevo: p.es_nuevo })),
-    invitaciones: invId,
+    invitaciones: resultados,
   })
 })
 
@@ -303,9 +317,29 @@ app.get(`${API_PREFIX}/stats`, requireAuth, (req, res) => {
 })
 
 // ---------- Webhook GoWA (entrada WhatsApp del bot) ----------
-app.post(`${API_PREFIX}/webhook/gowa`, (req, res) => {
-  // Registra el payload entrante y responde 200 a GoWA. La lógica de intención se implementa en el bot (Sprint 3).
-  res.status(200).json({ ok: true, note: 'webhook recibido' })
+// Recibe los mensajes entrantes de los jugadores (vía dongeeo-bot deviceRoutes)
+// y procesa las respuestas SI/NO a las invitaciones de partido.
+// El device del club tiene que estar enroutado aquí (ver deviceRoutes en dongeeo-bot).
+app.post(`${API_PREFIX}/webhook/gowa`, async (req, res) => {
+  res.status(200).json({ ok: true })
+  const msg = req.body as any
+  // Extraer número del jugador y texto
+  const from = msg?.from || msg?.sender?.id || msg?.chat_id || ''
+  const text = String(msg?.text || msg?.message || '').trim().toUpperCase().replace(/[^A-Z0-9ÁÉÍÓÚÑ]/g, '')
+  if (!from || !text) return
+
+  // Buscar invitaciones pendientes de ese jugador
+  const player = db.prepare(`SELECT id FROM players WHERE phone LIKE ?`).get(`%${from.replace(/[^0-9]/g, '').slice(-10)}%`) as any
+  if (!player) return
+
+  const inv = db.prepare(`SELECT mi.id FROM match_invitations mi WHERE mi.player_id = ? AND mi.status='pendiente' ORDER BY mi.created_at DESC LIMIT 1`).get(player.id) as any
+  if (!inv) return
+
+  if (text.includes('SI') || text === 'S' || text.includes('SI')) {
+    db.prepare(`UPDATE match_invitations SET status='aceptada' WHERE id=?`).run(inv.id)
+  } else if (text.includes('NO')) {
+    db.prepare(`UPDATE match_invitations SET status='rechazada' WHERE id=?`).run(inv.id)
+  }
 })
 
 app.listen(PORT, () => {
