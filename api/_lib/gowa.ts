@@ -31,12 +31,24 @@ export async function sendWhatsApp(rawPhone: string, message: string): Promise<{
   }
 }
 
-// Mensaje de invitación a partido (flujo del prototipo)
+// Mensaje de invitación a partido (flujo del prototipo) — con saltos de línea
 export function buildInviteMessage(playerName: string, parejaNombre: string, parejaCat: string, fecha: string, hora: string, cancha: string): string {
-  return `¡Hola ${playerName}! 🎾 ¿Juegas pádel el **${fecha} ${hora}**, cancha ${cancha}? Partido de 1h30. Te toca con ${parejaNombre} (${parejaCat}). Responde SI o NO.`
+  return [
+    `¡Hola ${playerName}! 🎾`,
+    `¿Juegas pádel el ${fecha} ${hora}, cancha ${cancha}?`,
+    `Partido de 1h30.`,
+    `Te toca con ${parejaNombre} (${parejaCat}).`,
+    `Responde SI o NO.`,
+  ].join('\n')
 }
 
-// Mensaje de reemplazo
+// Mensaje de reemplazo — con saltos de línea
 export function buildReplacementMessage(playerName: string, parejaNombre: string, parejaCat: string, fecha: string, hora: string): string {
-  return `¡Hola ${playerName}! 🎾 Quedó un cupo para el **${fecha} ${hora}**, partido 1h30. ¿Juegas? Te toca con ${parejaNombre} (${parejaCat}). Responde SI o NO.`
+  return [
+    `¡Hola ${playerName}! 🎾`,
+    `Quedó un cupo para el ${fecha} ${hora}, partido 1h30.`,
+    `¿Juegas?`,
+    `Te toca con ${parejaNombre} (${parejaCat}).`,
+    `Responde SI o NO.`,
+  ].join('\n')
 }

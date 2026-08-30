@@ -325,23 +325,49 @@ app.get(`${API_PREFIX}/stats`, requireAuth, (req, res) => {
 app.post(`${API_PREFIX}/webhook/gowa`, async (req, res) => {
   res.status(200).json({ ok: true })
   const msg = req.body as any
-  // Extraer número del jugador y texto
-  const from = msg?.from || msg?.sender?.id || msg?.chat_id || ''
-  const text = String(msg?.text || msg?.message || '').trim().toUpperCase().replace(/[^A-Z0-9ÁÉÍÓÚÑ]/g, '')
+  // Extraer número del jugador y texto — soporta varios formatos de payload GoWA
+  const from = msg?.from || msg?.sender?.id || msg?.chat_id || msg?.nested?.key?.remoteJid || msg?.phone || ''
+  const rawText = String(msg?.text || msg?.message || msg?.nested?.message?.conversation || msg?.body || '')
+  const text = rawText.trim().toUpperCase()
   if (!from || !text) return
 
   // Buscar invitaciones pendientes de ese jugador (número normalizado, ej 569...
   const fromDigits = from.replace(/[^0-9]/g, '')
-  const player = db.prepare(`SELECT id FROM players WHERE REPLACE(REPLACE(REPLACE(phone,'+',''),' ',''),'-','') = ? OR phone LIKE ?`).get(fromDigits, `%${fromDigits.slice(-9)}%`) as any
+  const player = db.prepare(`SELECT id, name FROM players WHERE REPLACE(REPLACE(REPLACE(phone,'+',''),' ',''),'-','') = ? OR phone LIKE ?`).get(fromDigits, `%${fromDigits.slice(-9)}%`) as any
   if (!player) return
 
-  const inv = db.prepare(`SELECT mi.id FROM match_invitations mi WHERE mi.player_id = ? AND mi.status='pendiente' ORDER BY mi.created_at DESC LIMIT 1`).get(player.id) as any
+  const inv = db.prepare(`SELECT mi.id, mi.open_match_id FROM match_invitations mi WHERE mi.player_id = ? AND mi.status='pendiente' ORDER BY mi.created_at DESC LIMIT 1`).get(player.id) as any
   if (!inv) return
 
-  if (text.includes('SI') || text === 'S' || text.includes('SI')) {
-    db.prepare(`UPDATE match_invitations SET status='aceptada' WHERE id=?`).run(inv.id)
-  } else if (text.includes('NO')) {
+  const isSi = text.includes('SI') || text === 'S'
+  const isNo = text.includes('NO')
+  const jid = `${fromDigits}@s.whatsapp.net`
+
+  if (isNo) {
+    // Marcar rechazada + buscar reemplazo + avisar al jugador con mensaje de cierre
     db.prepare(`UPDATE match_invitations SET status='rechazada' WHERE id=?`).run(inv.id)
+    db.prepare(`UPDATE players SET ausencias = ausencias + 1 WHERE id = ?`).run(player.id)
+    const todosEnPartido = db.prepare(`SELECT player_id FROM match_invitations WHERE open_match_id = ?`).all(inv.open_match_id).map((r: any) => r.player_id)
+    const salio = db.prepare(`SELECT * FROM players WHERE id = ?`).get(player.id) as any
+    const reemplazo = buscarReemplazo(salio.club_id, salio, todosEnPartido)
+    let reemplazoMsg = ''
+    if (reemplazo) {
+      const invId = randomUUID()
+      db.prepare(`INSERT INTO match_invitations (id, open_match_id, player_id) VALUES (?, ?, ?)`).run(invId, inv.open_match_id, reemplazo.id)
+      await sendWhatsApp(reemplazo.phone,
+        `¡Hola ${reemplazo.name}! 🎾 Quedó un cupo para un partido. ¿Juegas? Responde SI o NO.`)
+      reemplazoMsg = ` Ya estamos contactando a otro jugador para tu lugar.`
+    }
+    await sendWhatsApp(jid, `Sin problema, ${player.name} 🙌 ${reemplazoMsg}¡Te avisamos si sale otro partido con tu nivel! 👋`)
+  } else if (isSi) {
+    // Marcar aceptada + avisar + contar cupos
+    db.prepare(`UPDATE match_invitations SET status='aceptada' WHERE id=?`).run(inv.id)
+    const aceptadas = db.prepare(`SELECT COUNT(*) AS n FROM match_invitations WHERE open_match_id=? AND status='aceptada'`).get(inv.open_match_id) as any
+    const faltan = 4 - aceptadas.n
+    const cupoMsg = faltan > 0
+      ? `Te confirmamos tu lugar en el partido. Faltan ${faltan} jugador${faltan === 1 ? '' : 'es'} para completar.`
+      : `¡Partido COMPLETO! Los 4 jugadores confirmados. Nos vemos en la cancha. 🏟️`
+    await sendWhatsApp(jid, `¡Listo, ${player.name}! 🎾 ${cupoMsg}`)
   }
 })
 

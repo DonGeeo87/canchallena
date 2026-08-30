@@ -1,0 +1,29 @@
+version: '3.8'
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: canchallena-api
+    restart: unless-stopped
+    environment:
+      - PORT=3018
+      - DATA_DIR=/data
+      - GOWA_URL=http://gowa:3000
+      - GOWA_AUTH=admin:G0w4D0nGeeo87!
+      - GOWA_DEVICE_ID=DonGeeo87
+      - WHATSAPP_WEBHOOK_SECRET=G0w4H00kD0nGeeo87!
+    ports:
+      - "127.0.0.1:3018:3018"
+    volumes:
+      - canchallena_data:/data
+    networks:
+      - proxy-network
+
+volumes:
+  canchallena_data:
+
+networks:
+  proxy-network:
+    external: true
