@@ -4,7 +4,7 @@ import helmet from 'helmet'
 import { randomUUID } from 'node:crypto'
 import { db } from './_lib/db.js'
 import { requireAuth, signToken, type AuthUser } from './_lib/auth.js'
-import { armarPartido, buscarReemplazo } from './_lib/engine.js'
+import { armarPartido, buscarReemplazo, matchScore, rankCandidates } from './_lib/engine.js'
 import { sendWhatsApp, sendPoll, buildInviteMessage, buildReplacementMessage, getGowaConfig } from './_lib/gowa.js'
 import { getSession, setSession, deleteSession, isDuplicateMessage, markMessageProcessed, logBotEvent, tryReserveSlot } from './_lib/bot_session.js'
 
@@ -317,6 +317,98 @@ app.get(`${API_PREFIX}/stats`, requireAuth, (req, res) => {
   const players = db.prepare(`SELECT id, name, categoria, nivel, ganados, ausencias, dias_sin_jugar FROM players WHERE club_id = ? ORDER BY ganados DESC`).all(clubId)
   const partidosMes = db.prepare(`SELECT COUNT(*) AS n FROM matches WHERE club_id = ? AND status='jugado' AND strftime('%Y-%m', created_at) = strftime('%Y-%m', 'now')`).get(clubId) as any
   res.json({ players, partidosMes: partidosMes.n })
+})
+
+// ---------- AutoFill FASE A: detectar oportunidades (canchas libres con jugadores suficientes) ----------
+// El admin ve las oportunidades y aprueba. NO crea partidos solo aún (FASE B lo hará).
+app.get(`${API_PREFIX}/autofill/oportunidades`, requireAuth, (req, res) => {
+  const { clubId } = (req as any).authUser as AuthUser
+  const today = new Date().toISOString().slice(0, 10)
+
+  // Canchas libres hoy (horario valle tipicamente 12:00-19:00 en L-V)
+  const libres = db.prepare(`
+    SELECT s.id, s.starts_at, s.price, c.name AS court_name
+    FROM slots s JOIN courts c ON c.id = s.court_id
+    WHERE c.club_id = ? AND s.starts_at LIKE ? AND s.status = 'libre'
+    ORDER BY s.starts_at
+  `).all(clubId, `${today}%`)
+
+  // Jugadores disponibles (sin invitación pendiente) ordenados por match score
+  const players = db.prepare(`
+    SELECT p.* FROM players p
+    WHERE p.club_id = ?
+  `).all(clubId) as any[]
+
+  const oportunidades = libres.map((slot: any) => {
+    // Estimar nivel objetivo: media de categorías de los jugadores candidatos (4ª ~ nivel 3)
+    const candidatos = rankCandidates(players, {
+      nivelObjetivo: 4, // ~nivel medio 3.0
+      rangoNivel: 1,
+      disponible: true,
+      diasDesdeUltimo: slot ? 0 : 0,
+      historialAcepta: 0.7,
+      preferenciasOk: true,
+    })
+    const suficientes = candidatos.length >= 4
+    return {
+      slot_id: slot.id,
+      court_name: slot.court_name,
+      starts_at: slot.starts_at,
+      price: slot.price,
+      jugadores_compatibles: candidatos.slice(0, 8).map((c) => ({ name: c.player.name, categoria: c.player.categoria, score: c.score })),
+      puede_armar_partido: suficientes,
+      partidos_posibles: Math.floor(candidatos.length / 4),
+    }
+  }).filter((o) => o.puede_armar_partido)
+
+  res.json({ oportunidades })
+})
+
+// ---------- Expirar invitaciones vencidas (tiempo de respuesta) ----------
+// Invitaciones que llevan más de X minutos pendientes → se marcan expiradas y se busca reemplazo.
+app.post(`${API_PREFIX}/matchmaking/expirar`, requireAuth, async (req, res) => {
+  const { clubId } = (req as any).authUser as AuthUser
+  const limiteMin = Number(req.body?.minutos) || 15
+
+  // Invitaciones pendientes con más de 'limiteMin' minutos (usa created_at en UTC)
+  const vencidas = db.prepare(`
+    SELECT mi.id, mi.player_id, mi.open_match_id
+    FROM match_invitations mi
+    JOIN open_matches om ON om.id = mi.open_match_id
+    JOIN slots sl ON sl.id = om.slot_id
+    JOIN courts c ON c.id = sl.court_id
+    WHERE mi.status = 'pendiente' AND c.club_id = ?
+      AND (strftime('%s','now') - strftime('%s', mi.created_at)) > ?
+  `).all(clubId, limiteMin * 60) as any[]
+
+  let expiradas = 0
+  for (const inv of vencidas) {
+    db.prepare(`UPDATE match_invitations SET status='expirada' WHERE id=?`).run(inv.id)
+    logBotEvent('', 'invitacion_expirada', { invId: inv.id })
+    expiradas++
+  }
+  res.json({ expiradas, limite_minutos: limiteMin })
+})
+
+// ---------- Ranking por Match Score para un slot ----------
+// Dado un slot, devuelve los jugadores compatibles ordenados por score.
+app.get(`${API_PREFIX}/matchmaking/:id/candidatos`, requireAuth, (req, res) => {
+  const { clubId } = (req as any).authUser as AuthUser
+  const slotId = String(req.params.id)
+  const slot = db.prepare(`SELECT c.club_id FROM slots s JOIN courts c ON c.id=s.court_id WHERE s.id=?`).get(slotId) as any
+  if (!slot || slot.club_id !== clubId) return res.status(404).json({ error: 'Slot no encontrado' })
+
+  const players = db.prepare(`SELECT * FROM players WHERE club_id=?`).all(clubId) as any[]
+  // Excluir jugadores que ya tienen invitación aceptada en un partido abierto (para no sobre-invitar)
+  const ranking = rankCandidates(players, {
+    nivelObjetivo: 4,
+    rangoNivel: 1,
+    disponible: true,
+    diasDesdeUltimo: 0,
+    historialAcepta: 0.7,
+    preferenciasOk: true,
+  })
+  res.json({ candidatos: ranking.slice(0, 10).map((r) => ({ name: r.player.name, categoria: r.player.categoria, score: r.score, breakdown: r.breakdown })) })
 })
 
 // ---------- Webhook GoWA (entrada WhatsApp del bot) ----------

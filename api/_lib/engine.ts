@@ -104,3 +104,71 @@ export function buscarReemplazo(clubId: string, salio: PlayerRow, yaEnPartido: s
       return da - db
     })[0] ?? null
 }
+
+// ============================================================
+// Match Score (V0.5) — scoring ponderado de compatibilidad de un candidato
+// con el perfil objetivo de un partido. Pesos configurables por club.
+// ============================================================
+export interface MatchScoreWeights {
+  nivel: number       // 0-1 fracción del score total
+  dias_sin_jugar: number
+  disponibilidad: number
+  historial: number
+  preferencias: number
+}
+export const DEFAULT_WEIGHTS: MatchScoreWeights = {
+  nivel: 0.40, dias_sin_jugar: 0.25, disponibilidad: 0.15, historial: 0.10, preferencias: 0.10,
+}
+
+export interface MatchScoreInput {
+  player: PlayerRow
+  nivelObjetivo: number       // nivel objetivo del partido (ej 3.0)
+  rangoNivel: number          // +/- tolerancia de nivel (ej 0.5)
+  disponible: boolean         // está disponible en la franja?
+  diasDesdeUltimo: number     // días desde su último partido
+  historialAcepta: number     // 0-1 tasa de aceptación histórica
+  preferenciasOk: boolean     // cumple preferencias del club (horario/nivel)
+}
+
+// Devuelve un score 0-100 + desglose por criterio.
+export function matchScore(input: MatchScoreInput, weights: MatchScoreWeights = DEFAULT_WEIGHTS): { score: number; breakdown: Record<string, number> } {
+  const { player, nivelObjetivo, rangoNivel, disponible, diasDesdeUltimo, historialAcepta, preferenciasOk } = input
+
+  // Nivel: 100 si está dentro del rango objetivo; decae con la distancia fuera del rango.
+  const catNum = CATEGORY_RANK[player.categoria] ?? 6
+  const dist = Math.abs(catNum - nivelObjetivo)
+  const nivelScore = dist <= rangoNivel ? 100 : Math.max(0, 100 - (dist - rangoNivel) * 30)
+
+  // Días sin jugar: favorece a quien más tiempo lleva esperando (más chances de aceptar).
+  const diasScore = Math.min(100, diasDesdeUltimo * 20)
+
+  // Disponibilidad: binario.
+  const dispScore = disponible ? 100 : 0
+
+  // Historial de aceptación.
+  const histScore = historialAcepta * 100
+
+  // Preferencias.
+  const prefScore = preferenciasOk ? 100 : 50
+
+  const breakdown = { nivel: nivelScore, dias: diasScore, disponibilidad: dispScore, historial: histScore, preferencias: prefScore }
+  const score = Math.round(
+    breakdown.nivel * weights.nivel +
+    breakdown.dias * weights.dias_sin_jugar +
+    breakdown.disponibilidad * weights.disponibilidad +
+    breakdown.historial * weights.historial +
+    breakdown.preferencias * weights.preferencias
+  )
+
+  return { score, breakdown }
+}
+
+// Ordena candidatos por match score para un partido objetivo.
+export function rankCandidates(players: PlayerRow[], objetivo: Omit<MatchScoreInput, 'player'>, weights?: MatchScoreWeights): { player: PlayerRow; score: number; breakdown: Record<string, number> }[] {
+  return players
+    .map((p) => {
+      const { score, breakdown } = matchScore({ ...objetivo, player: p }, weights)
+      return { player: p, score, breakdown }
+    })
+    .sort((a, b) => b.score - a.score)
+}
