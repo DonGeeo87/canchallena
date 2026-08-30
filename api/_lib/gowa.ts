@@ -31,13 +31,36 @@ export async function sendWhatsApp(rawPhone: string, message: string): Promise<{
   }
 }
 
+// Envía una encuesta interactiva (botonera de opciones tappables) — soportada por GoWA v9
+export async function sendPoll(rawPhone: string, question: string, options: string[]): Promise<{ ok: boolean; error?: string }> {
+  const phone = String(rawPhone).replace(/[^0-9]/g, '')
+  if (!phone || options.length < 2) return { ok: false, error: 'Teléfono u opciones inválidas' }
+  const auth64 = Buffer.from(GOWA_AUTH).toString('base64')
+  try {
+    const res = await fetch(`${GOWA_URL}/wa/send/poll`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Basic ${auth64}`,
+        'X-Device-Id': GOWA_DEVICE_ID,
+      },
+      body: JSON.stringify({ phone, question, options, max_answer: 1 }),
+    })
+    const body = await res.json().catch(() => ({}))
+    return { ok: res.ok || (body as any).code === 'SUCCESS', error: (body as any).message || undefined }
+  } catch (e: any) {
+    return { ok: false, error: e.message }
+  }
+}
+
 // Mensaje de invitación a partido (flujo del prototipo) — con saltos de línea
 export function buildInviteMessage(playerName: string, parejaNombre: string, parejaCat: string, fecha: string, hora: string, cancha: string): string {
   return [
     `¡Hola ${playerName}! 🎾`,
     `¿Juegas pádel el ${fecha} ${hora}, cancha ${cancha}?`,
     `Partido de 1h30.`,
-    `Te toca con ${parejaNombre} (${parejaCat}).`,
+    `Te tocaría con ${parejaNombre} (${parejaCat}).`,
+    `Cada uno confirma su cupo por separado.`,
     `Responde SI o NO.`,
   ].join('\n')
 }
@@ -48,7 +71,7 @@ export function buildReplacementMessage(playerName: string, parejaNombre: string
     `¡Hola ${playerName}! 🎾`,
     `Quedó un cupo para el ${fecha} ${hora}, partido 1h30.`,
     `¿Juegas?`,
-    `Te toca con ${parejaNombre} (${parejaCat}).`,
+    `Te tocaría con ${parejaNombre} (${parejaCat}).`,
     `Responde SI o NO.`,
   ].join('\n')
 }

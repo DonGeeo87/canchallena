@@ -5,7 +5,7 @@ import { randomUUID } from 'node:crypto'
 import { db } from './_lib/db.js'
 import { requireAuth, signToken, type AuthUser } from './_lib/auth.js'
 import { armarPartido, buscarReemplazo } from './_lib/engine.js'
-import { sendWhatsApp, buildInviteMessage, buildReplacementMessage, getGowaConfig } from './_lib/gowa.js'
+import { sendWhatsApp, sendPoll, buildInviteMessage, buildReplacementMessage, getGowaConfig } from './_lib/gowa.js'
 
 const app = express()
 app.use(helmet())
@@ -319,56 +319,94 @@ app.get(`${API_PREFIX}/stats`, requireAuth, (req, res) => {
 })
 
 // ---------- Webhook GoWA (entrada WhatsApp del bot) ----------
-// Recibe los mensajes entrantes de los jugadores (vía dongeeo-bot deviceRoutes)
-// y procesa las respuestas SI/NO a las invitaciones de partido.
-// El device del club tiene que estar enroutado aquí (ver deviceRoutes en dongeeo-bot).
+// Procesa dos flujos:
+//   1) Respuesta SI/NO a una invitación de partido PENDIENTE.
+//   2) Consulta de disponibilidad (canchas/horarios libres) cuando NO hay invitación pendiente.
 app.post(`${API_PREFIX}/webhook/gowa`, async (req, res) => {
   res.status(200).json({ ok: true })
   const msg = req.body as any
-  // Extraer número del jugador y texto — soporta varios formatos de payload GoWA
-  const from = msg?.from || msg?.sender?.id || msg?.chat_id || msg?.nested?.key?.remoteJid || msg?.phone || ''
-  const rawText = String(msg?.text || msg?.message || msg?.nested?.message?.conversation || msg?.body || '')
-  const text = rawText.trim().toUpperCase()
-  if (!from || !text) return
+  console.log(`[webhook] payload: ${JSON.stringify(msg).slice(0, 400)}`)
+  // Solo eventos de MENSAJE entrante; ignorar ack/read/reaction/presencia
+  if (msg?.event && msg.event !== 'message') return
+  if (msg?.is_from_me === true) return
 
-  // Buscar invitaciones pendientes de ese jugador (número normalizado, ej 569...
+  // El texto y remitente reales están anidados en msg.payload (formato GoWA v9)
+  const p = msg?.payload || msg || {}
+  const from = p?.from || msg?.from || msg?.sender?.id || p?.chat_id || ''
+  const rawText = String(p?.body || p?.text || msg?.body || msg?.text || msg?.message || '').trim()
+  if (!from || !rawText) return
+  const text = rawText.toUpperCase()
+
   const fromDigits = from.replace(/[^0-9]/g, '')
-  const player = db.prepare(`SELECT id, name FROM players WHERE REPLACE(REPLACE(REPLACE(phone,'+',''),' ',''),'-','') = ? OR phone LIKE ?`).get(fromDigits, `%${fromDigits.slice(-9)}%`) as any
+  const player = db.prepare(`SELECT id, name, club_id FROM players WHERE REPLACE(REPLACE(REPLACE(phone,'+',''),' ',''),'-','') = ? OR phone LIKE ?`).get(fromDigits, `%${fromDigits.slice(-9)}%`) as any
   if (!player) return
-
-  const inv = db.prepare(`SELECT mi.id, mi.open_match_id FROM match_invitations mi WHERE mi.player_id = ? AND mi.status='pendiente' ORDER BY mi.created_at DESC LIMIT 1`).get(player.id) as any
-  if (!inv) return
-
-  const isSi = text.includes('SI') || text === 'S'
-  const isNo = text.includes('NO')
   const jid = `${fromDigits}@s.whatsapp.net`
 
-  if (isNo) {
-    // Marcar rechazada + buscar reemplazo + avisar al jugador con mensaje de cierre
-    db.prepare(`UPDATE match_invitations SET status='rechazada' WHERE id=?`).run(inv.id)
-    db.prepare(`UPDATE players SET ausencias = ausencias + 1 WHERE id = ?`).run(player.id)
-    const todosEnPartido = db.prepare(`SELECT player_id FROM match_invitations WHERE open_match_id = ?`).all(inv.open_match_id).map((r: any) => r.player_id)
-    const salio = db.prepare(`SELECT * FROM players WHERE id = ?`).get(player.id) as any
-    const reemplazo = buscarReemplazo(salio.club_id, salio, todosEnPartido)
-    let reemplazoMsg = ''
-    if (reemplazo) {
-      const invId = randomUUID()
-      db.prepare(`INSERT INTO match_invitations (id, open_match_id, player_id) VALUES (?, ?, ?)`).run(invId, inv.open_match_id, reemplazo.id)
-      await sendWhatsApp(reemplazo.phone,
-        `¡Hola ${reemplazo.name}! 🎾 Quedó un cupo para un partido. ¿Juegas? Responde SI o NO.`)
-      reemplazoMsg = ` Ya estamos contactando a otro jugador para tu lugar.`
+  // ── FLUJO 1: ¿Hay una invitación pendiente para este jugador? Entonces SI/NO.
+  const inv = db.prepare(`SELECT mi.id, mi.open_match_id, mi.status FROM match_invitations mi WHERE mi.player_id = ? AND mi.status='pendiente' ORDER BY mi.created_at DESC LIMIT 1`).get(player.id) as any
+
+  if (inv) {
+    const isSi = text === 'S' || text.includes('SI') || text === 'SÍ' || text === 'YES'
+    const isNo = text === 'N' || text.includes('NO')
+    if (isSi) {
+      // Marcar aceptada YA MISMO (no hay otro jugador en el sistema que cuente antes)
+      db.prepare(`UPDATE match_invitations SET status='aceptada' WHERE id=?`).run(inv.id)
+      const aceptadas = db.prepare(`SELECT COUNT(*) AS n FROM match_invitations WHERE open_match_id=? AND status='aceptada'`).get(inv.open_match_id) as any
+      const faltan = 4 - aceptadas.n
+      const cupoMsg = faltan > 0
+        ? `Listo, confirmamos tu lugar 🎾 (${aceptadas.n}/4 confirmados).\nFaltan ${faltan} jugador${faltan === 1 ? '' : 'es'} para completar.`
+        : `¡Partido COMPLETO! 🎾\nLos 4 jugadores confirmados.\nNos vemos en la cancha. 🏟️`
+      await sendWhatsApp(jid, `¡Listo, ${player.name}! ${cupoMsg}`)
+    } else if (isNo) {
+      db.prepare(`UPDATE match_invitations SET status='rechazada' WHERE id=?`).run(inv.id)
+      db.prepare(`UPDATE players SET ausencias = ausencias + 1 WHERE id = ?`).run(player.id)
+      const todosEnPartido = db.prepare(`SELECT player_id FROM match_invitations WHERE open_match_id = ?`).all(inv.open_match_id).map((r: any) => r.player_id)
+      const salio = db.prepare(`SELECT * FROM players WHERE id = ?`).get(player.id) as any
+      const reemplazo = buscarReemplazo(salio.club_id, salio, todosEnPartido)
+      let reemplazoMsg = ''
+      if (reemplazo) {
+        const invId = randomUUID()
+        db.prepare(`INSERT INTO match_invitations (id, open_match_id, player_id) VALUES (?, ?, ?)`).run(invId, inv.open_match_id, reemplazo.id)
+        await sendWhatsApp(reemplazo.phone,
+          `¡Hola ${reemplazo.name}! 🎾\nQuedó un cupo para un partido.\n¿Juegas?\nResponde SI o NO.`)
+        reemplazoMsg = `\nYa estamos contactando a otro jugador para tu lugar.`
+      }
+      await sendWhatsApp(jid, `Sin problema, ${player.name} 🙌${reemplazoMsg}\n¡Te avisamos si sale otro partido con tu nivel! 👋`)
     }
-    await sendWhatsApp(jid, `Sin problema, ${player.name} 🙌 ${reemplazoMsg}¡Te avisamos si sale otro partido con tu nivel! 👋`)
-  } else if (isSi) {
-    // Marcar aceptada + avisar + contar cupos
-    db.prepare(`UPDATE match_invitations SET status='aceptada' WHERE id=?`).run(inv.id)
-    const aceptadas = db.prepare(`SELECT COUNT(*) AS n FROM match_invitations WHERE open_match_id=? AND status='aceptada'`).get(inv.open_match_id) as any
-    const faltan = 4 - aceptadas.n
-    const cupoMsg = faltan > 0
-      ? `Te confirmamos tu lugar en el partido. Faltan ${faltan} jugador${faltan === 1 ? '' : 'es'} para completar.`
-      : `¡Partido COMPLETO! Los 4 jugadores confirmados. Nos vemos en la cancha. 🏟️`
-    await sendWhatsApp(jid, `¡Listo, ${player.name}! 🎾 ${cupoMsg}`)
+    // Si respondió otra cosa distinta a SI/NO con invitación pendiente, no hacer nada.
+    return
   }
+
+  // ── FLUJO 2: Sin invitación pendiente → el socio consulta disponibilidad (canchas/horarios).
+
+  // Palabras clave de consulta de disponibilidad
+  const consulta = /(CANCHA|PARTIDO|HORARIO|DISPONIB|JUEGO|RESERVAR|QUE HAY|HOLA|OPCIO)/.test(text)
+  if (!consulta && text !== '1') return
+
+  // Canchas y horarios libres HOY para el club del jugador
+  const today = new Date().toISOString().slice(0, 10)
+  const libres = db.prepare(`
+    SELECT s.id, s.starts_at, s.price, c.name AS court_name
+    FROM slots s JOIN courts c ON c.id = s.court_id
+    WHERE c.club_id = ? AND s.starts_at LIKE ? AND s.status = 'libre'
+    ORDER BY s.starts_at LIMIT 6
+  `).all(player.club_id, `${today}%`)
+
+  if (!libres.length) {
+    await sendWhatsApp(jid, `Hola ${player.name}! 🎾\nHoy no hay canchas libres disponibles.\nTe avisamos cuando se abra un cupo.`)
+    return
+  }
+
+  // Construir mensaje legible con canchas disponibles
+  const lineas = libres.map((s: any, i: number) =>
+    `${i + 1}. ${s.court_name} · ${new Date(s.starts_at).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })} h · $${Math.round(s.price).toLocaleString('es-CL')}`
+  )
+  const cuerpo = `Hola ${player.name}! 🎾\nEsto es lo que hay disponible HOY:\n\n${lineas.join('\n')}\n\n¿Quieres reservar uno?`
+  const opciones = libres.map((s: any) => `${new Date(s.starts_at).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })} · ${s.court_name}`)
+
+  // Enviar texto + botonera (poll)
+  await sendWhatsApp(jid, cuerpo)
+  await sendPoll(jid.replace('@s.whatsapp.net', ''), '¿Qué cancha te interesa?', opciones)
 })
 
 app.listen(PORT, () => {
