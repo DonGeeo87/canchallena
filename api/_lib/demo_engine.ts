@@ -20,6 +20,16 @@ export interface DemoEvent {
   type: string
   message: string
   at: string
+  // Datos estructurados para que el frontend anime el flujo
+  player?: { name: string; categoria: string }
+  court?: { name: string; time: string }
+  match?: {
+    parejaA: { name: string; categoria: string }[]
+    parejaB: { name: string; categoria: string }[]
+    courtName: string
+    time: string
+  }
+  reemplazo?: { name: string; categoria: string }
 }
 
 // Genera slots libres para "hoy" en las canchas demo (para que el bot tenga disponibilidad)
@@ -49,9 +59,26 @@ export function getDemoState(): any {
   const openMatches = db.prepare(`SELECT om.*, c.name AS court_name, s.starts_at FROM open_matches om JOIN slots s ON s.id=om.slot_id JOIN courts c ON c.id=s.court_id WHERE c.club_id = ? AND om.status='buscando'`).all(DEMO_CLUB) as any[]
   const occupied = slots.filter((s: any) => s.status !== 'libre').length
   const free = slots.filter((s: any) => s.status === 'libre').length
+
+  // Estado reactivo de cada cancha: ocupada si tiene algún slot no-libre HOY
+  const courtCards = courts.map((c) => {
+    const courtSlots = slots.filter((s: any) => s.court_id === c.id)
+    const anyOccupied = courtSlots.some((s: any) => s.status !== 'libre')
+    const firstSlot = courtSlots[0]
+    return {
+      id: c.id,
+      name: c.name,
+      price: c.price_per_slot,
+      status: anyOccupied ? 'reservada' : 'libre',
+      // horario del primer slot libre (para mostrar)
+      time: firstSlot ? firstSlot.starts_at.slice(11, 16) : '—',
+    }
+  })
+
   return {
     club: { name: club.name, slug: club.slug, city: club.city },
     courts: courts.map((c) => ({ id: c.id, name: c.name, price: c.price_per_slot })),
+    courtCards,
     players: players.map((p) => ({ id: p.id, name: p.name, categoria: p.categoria, nivel: p.nivel, es_nuevo: p.es_nuevo, dias_sin_jugar: p.dias_sin_jugar })),
     occupancyRate: (occupied + free) ? Math.round((occupied / (occupied + free)) * 100) : 0,
     occupiedCount: occupied,
@@ -76,6 +103,8 @@ export function simulateNewReservation(): DemoEvent {
     type: 'reserva',
     message: `✅ ${player.name} (${player.categoria}) reservó ${slot.court_name} a las ${slot.starts_at.slice(11, 16)}. Cliente notificado automáticamente.`,
     at: new Date().toISOString(),
+    player: { name: player.name, categoria: player.categoria },
+    court: { name: slot.court_name, time: slot.starts_at.slice(11, 16) },
   }
 }
 
@@ -112,7 +141,19 @@ export function simulateCreateMatch(): DemoEvent {
     type: 'match',
     message: `🤖 Motor de matchmaking: armó las parejas e invitó a 4 jugadores.\n\n🎾 ${a1.name} + ${a2.name}  vs  ${b1.name} + ${b2.name}\n\nInvitados: ${nombres}. El bot espera sus respuestas SI/NO.`,
     at: new Date().toISOString(),
+    match: {
+      parejaA: [{ name: a1.name, categoria: a1.categoria }, { name: a2.name, categoria: a2.categoria }],
+      parejaB: [{ name: b1.name, categoria: b1.categoria }, { name: b2.name, categoria: b2.categoria }],
+      courtName: courtName(slotId),
+      time: slot?.starts_at ? slot.starts_at.slice(11, 16) : '19:30',
+    },
   }
+}
+
+// Helper para obtener nombre de cancha de un slot
+function courtName(slotId: string): string {
+  const r = db.prepare(`SELECT c.name FROM slots s JOIN courts c ON c.id=s.court_id WHERE s.id=?`).get(slotId) as any
+  return r?.name || 'Cancha'
 }
 
 // Simula una cancelación: libera un cupo y busca reemplazo
