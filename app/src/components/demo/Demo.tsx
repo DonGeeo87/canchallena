@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 
 // ============================================================
 // /demo — Lab interactivo de CanchaLlena
@@ -53,6 +53,12 @@ export default function Demo({ onNavigateHome }: { onNavigateHome: () => void })
   const [chat, setChat] = useState<{ role: 'cliente' | 'bot'; text: string }[]>([]);
   const [interventions, setInterventions] = useState(0); // siempre 0 → el agente no requiere admin
   const [kpiPulse, setKpiPulse] = useState(false);
+  const chatRef = useRef<HTMLDivElement>(null);
+
+  // Autoscroll al final del chat simulado
+  useEffect(() => {
+    if (chatRef.current) chatRef.current.scrollTop = chatRef.current.scrollHeight;
+  }, [chat]);
 
   const loadState = async () => {
     try {
@@ -156,139 +162,130 @@ export default function Demo({ onNavigateHome }: { onNavigateHome: () => void })
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
         {/* ← volver */}
-        <button onClick={onNavigateHome} className="text-sm font-semibold text-[#62626A] hover:text-[#7C3AED] mb-4">← Volver a la página</button>
+        <button onClick={onNavigateHome} className="text-sm font-semibold text-[#62626A] hover:text-[#7C3AED] mb-3">← Volver a la página</button>
 
-        {/* Hero: misión */}
-        <div className="mb-6">
-          <h1 className="text-2xl md:text-3xl font-black">🤖 Ponga a CanchaLlena a trabajar</h1>
-          <p className="text-[#62626A] mt-1 max-w-2xl">
-            Simule lo que ocurriría en un día normal de su club. Cada botón activa una situación real:
-            observe cómo el agente responde, actualiza las canchas y notifica a los jugadores automáticamente.
+        {/* Hero: misión (compacto) */}
+        <div className="mb-4">
+          <h1 className="text-xl md:text-2xl font-black">🤖 Ponga a CanchaLlena a trabajar</h1>
+          <p className="text-sm text-[#62626A] mt-1">
+            Elija una escena abajo y vea cómo el agente conversa y gestiona el club solo.
           </p>
         </div>
 
-        {/* Estado del agente + KPIs */}
-        <div className="flex flex-col md:flex-row md:items-center gap-4 mb-6">
-          {/* Estado agente */}
-          <div className="flex items-center gap-3 bg-white rounded-2xl px-4 py-3 border border-[#D9D9D2]">
-            <div className="text-3xl">🤖</div>
+        {/* Estado del agente + KPIs (compacto, 2x2 en móvil) */}
+        <div className="flex items-center gap-3 mb-4">
+          <div className="flex items-center gap-2.5 bg-white rounded-2xl px-3.5 py-2.5 border border-[#D9D9D2]">
+            <span className="text-2xl">🤖</span>
             <div>
-              <div className="flex items-center gap-2">
-                <span className="w-2.5 h-2.5 rounded-full animate-pulse" style={{ background: statusDot.color }} />
-                <span className="font-extrabold text-sm" style={{ color: statusDot.color }}>{statusDot.label}</span>
+              <div className="flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full animate-pulse" style={{ background: statusDot.color }} />
+                <span className="font-extrabold text-xs" style={{ color: statusDot.color }}>{statusDot.label}</span>
               </div>
-              <p className="text-xs text-[#62626A]">{statusDot.sub}</p>
             </div>
           </div>
+          <span className="text-xs font-bold text-[#7C3AED] ml-auto">{statusDot.sub}</span>
+        </div>
 
-          {/* KPIs reactivos */}
-          <div className="flex flex-wrap gap-3 flex-1">
-            {kpis.map((k) => (
-              <div key={k.label} className={`bg-white rounded-2xl px-4 py-3 border border-[#D9D9D2] flex-1 min-w-[120px] transition-transform ${kpiPulse ? 'scale-105' : ''}`}>
-                <p className="text-[10px] text-[#62626A] font-bold uppercase">{k.label}</p>
-                <p className="text-xl font-extrabold" style={{ color: k.color }}>{k.value}{k.suffix}</p>
-              </div>
-            ))}
+        {/* KPIs reactivos: 2 filas en móvil */}
+        <div className="grid grid-cols-3 gap-2 mb-4">
+          {kpis.map((k) => (
+            <div key={k.label} className={`bg-white rounded-2xl px-3 py-2.5 border border-[#D9D9D2] text-center transition-transform ${kpiPulse ? 'scale-105' : ''}`}>
+              <p className="text-[9px] text-[#62626A] font-bold uppercase">{k.label}</p>
+              <p className="text-lg font-extrabold" style={{ color: k.color }}>{k.value}{k.suffix}</p>
+            </div>
+          ))}
+        </div>
+
+        {/* WhatsApp PRIMERO (prominente en móvil) */}
+        <div className="bg-[#E5DED5] rounded-3xl overflow-hidden border border-[#D9D9D2] mb-4">
+          <div className="bg-[#075E54] text-white px-4 py-2.5 flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-full bg-[#128C7E] flex items-center justify-center text-base">🤖</div>
+            <div className="flex-1">
+              <p className="font-bold text-sm leading-tight">CanchaLlena</p>
+              <p className="text-[9px] text-white/80"><span className="inline-block w-1.5 h-1.5 rounded-full bg-[#C7F000]" /> {state?.club.name} · Operativo</p>
+            </div>
+            <span className="text-[9px] bg-white/15 px-2 py-1 rounded-lg font-bold">🧪 Simulado</span>
+          </div>
+          <div ref={chatRef} className="bg-[#ECE5DD] p-4 space-y-2 min-h-[260px] max-h-[320px] overflow-y-auto">
+            {chat.length === 0 ? (
+              <p className="text-center text-[#62626A] text-sm pt-12">
+                Elige una escena abajo → mira cómo conversa 👇
+              </p>
+            ) : (
+              chat.map((m, i) => (
+                <div key={i} className={`flex ${m.role === 'cliente' ? 'justify-end' : 'justify-start'} animate-fade-in`}>
+                  <div className={`max-w-[85%] px-3 py-2 rounded-2xl text-sm ${m.role === 'cliente' ? 'bg-[#DCF8C6] rounded-br-md' : 'bg-white rounded-bl-md'}`}>
+                    <span className="block text-[9px] font-bold mb-0.5" style={{ color: m.role === 'cliente' ? '#128C7E' : '#075E54' }}>
+                      {m.role === 'cliente' ? 'Cliente' : 'CanchaLlena'}
+                    </span>
+                    <span className="whitespace-pre-line">{m.text}</span>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+          <div className="px-3 py-2 bg-[#E5DED5] border-t border-black/5 flex items-center gap-2">
+            <div className="flex-1 bg-white rounded-full px-3 py-1.5 text-[#62626A] text-xs">Escribe un mensaje...</div>
           </div>
         </div>
 
-        {/* Las 4 historias */}
-        <div className="mb-6">
-          <h2 className="text-lg font-extrabold mb-3">¿Qué quiere probar?</h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+        {/* Escenarios compactos 2x2 en móvil */}
+        <div className="mb-4">
+          <h2 className="text-sm font-extrabold mb-2">¿Qué escena quiere probar?</h2>
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
             {STORIES.map((s) => (
               <button
                 key={s.key}
                 disabled={!!acting}
                 onClick={() => runAction(s.key)}
-                className="text-left bg-white rounded-2xl p-4 border border-[#D9D9D2] hover:border-[#7C3AED] hover:shadow-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed group"
+                className={`text-left bg-white rounded-2xl p-3 border transition-all disabled:opacity-50 disabled:cursor-not-allowed ${acting === s.key ? 'border-[#7C3AED] ring-2 ring-[#7C3AED]/30' : 'border-[#D9D9D2] hover:border-[#7C3AED]'}`}
               >
-                <div className="flex items-center gap-2 mb-1.5">
-                  <span className="text-2xl">{s.icon}</span>
-                  <span className="text-[10px] font-black text-[#7C3AED]">{s.num}</span>
+                <div className="flex items-center gap-1.5 mb-1">
+                  <span className="text-lg">{s.icon}</span>
+                  <span className="text-[9px] font-black text-[#7C3AED]">{s.num}</span>
                 </div>
-                <p className="font-extrabold text-sm group-hover:text-[#7C3AED]">{s.title}</p>
-                <p className="text-xs text-[#62626A] mt-0.5">{s.desc}</p>
-                <p className="text-[11px] text-[#7C3AED] font-semibold mt-2">{s.action}</p>
+                <p className="font-extrabold text-xs leading-tight">{s.title}</p>
+                <p className="text-[10px] text-[#62626A] mt-0.5">{s.desc}</p>
               </button>
             ))}
           </div>
+          {acting && <p className="text-xs text-[#7C3AED] mt-2 font-bold animate-pulse">⏳ CanchaLlena está trabajando...</p>}
         </div>
 
-        {/* Layout principal: WhatsApp grande | Canchas reactivas */}
-        <div className="grid lg:grid-cols-5 gap-6 mb-6">
-          {/* WhatsApp (2/3 aprox) */}
-          <div className="lg:col-span-3 bg-[#E5DED5] rounded-3xl overflow-hidden border border-[#D9D9D2]">
-            {/* header */}
-            <div className="bg-[#075E54] text-white px-5 py-3 flex items-center gap-3">
-              <div className="w-9 h-9 rounded-full bg-[#128C7E] flex items-center justify-center text-lg">🤖</div>
-              <div className="flex-1">
-                <p className="font-bold text-sm">CanchaLlena</p>
-                <p className="text-[10px] text-white/80 flex items-center gap-1">
-                  <span className="w-1.5 h-1.5 rounded-full bg-[#C7F000]" /> {state?.club.name} · Operativo
-                </p>
-              </div>
-              <span className="text-[10px] bg-white/15 px-2 py-1 rounded-lg font-bold">🧪 Simulado</span>
+
+        {/* Canchas reactivas + resultado (después de escenarios) */}
+        <div className="mb-6">
+          <div className="bg-white rounded-3xl p-4 border border-[#D9D9D2]">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="font-extrabold text-sm">🏟️ El club ahora</h3>
+              <p className="text-[9px] bg-[#7C3AED]/10 text-[#7C3AED] px-2 py-1 rounded-lg font-bold">EN TIEMPO REAL</p>
             </div>
-            {/* messages */}
-            <div className="bg-[#ECE5DD] p-5 space-y-2.5 min-h-[320px] max-h-[380px] overflow-y-auto">
-              {chat.length === 0 ? (
-                <p className="text-center text-[#62626A] text-sm pt-10">
-                  Toca un escenario para ver a CanchaLlena conversar con los clientes 👆
-                </p>
-              ) : (
-                chat.map((m, i) => (
-                  <div key={i} className={`flex ${m.role === 'cliente' ? 'justify-end' : 'justify-start'} animate-fade-in`}>
-                    <div className={`max-w-[80%] px-3.5 py-2.5 rounded-2xl text-sm ${m.role === 'cliente' ? 'bg-[#DCF8C6] rounded-br-md' : 'bg-white rounded-bl-md'}`}>
-                      <span className="block text-[10px] font-bold mb-0.5" style={{ color: m.role === 'cliente' ? '#128C7E' : '#075E54' }}>
-                        {m.role === 'cliente' ? 'Cliente' : 'CanchaLlena'}
-                      </span>
-                      <span className="whitespace-pre-line">{m.text}</span>
-                    </div>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              {state?.courtCards.map((c) => (
+                <div key={c.id} className={`rounded-2xl p-3 border transition-colors ${c.status === 'libre' ? 'bg-white border-[#16A34A]/40' : 'bg-[#7C3AED]/5 border-[#7C3AED]/40'}`}>
+                  <div className="text-lg mb-1">🎾</div>
+                  <p className="font-bold text-xs">{c.name}</p>
+                  <p className="text-[10px] text-[#62626A]">${c.price.toLocaleString('de-DE')}/tanda</p>
+                  <div className="flex items-center gap-1.5 mt-1.5">
+                    <span className={`w-2 h-2 rounded-full ${c.status === 'libre' ? 'bg-[#16A34A]' : 'bg-[#7C3AED]'}`} />
+                    <span className={`text-[10px] font-bold ${c.status === 'libre' ? 'text-[#16A34A]' : 'text-[#7C3AED]'}`}>
+                      {c.status === 'libre' ? 'LIBRE' : 'OCUPADA'}
+                    </span>
                   </div>
-                ))
+                </div>
+              )) || (
+                <>
+                  {[1,2,3,4].map((i) => (
+                    <div key={i} className="bg-white rounded-2xl p-3 border border-[#D9D9D2] animate-pulse"><div className="h-4 bg-gray-200 rounded mb-2"/><div className="h-3 bg-gray-100 rounded"/></div>
+                  ))}
+                </>
               )}
-            </div>
-            {/* input simulado */}
-            <div className="px-4 py-2.5 bg-[#E5DED5] border-t border-black/5 flex items-center gap-2">
-              <div className="flex-1 bg-white rounded-full px-4 py-2 text-[#62626A] text-sm">Escribe un mensaje...</div>
-              <div className="text-[#075E54] text-lg">➤</div>
             </div>
           </div>
 
-          {/* Canchas reactivas (2/5 aprox) */}
-          <div className="lg:col-span-2 flex flex-col gap-4">
-            <div className="bg-white rounded-3xl p-5 border border-[#D9D9D2] flex-1">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="font-extrabold">🏟️ El club ahora</h3>
-                <p className="text-[10px] bg-[#7C3AED]/10 text-[#7C3AED] px-2 py-1 rounded-lg font-bold">EN TIEMPO REAL</p>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                {state?.courtCards.map((c) => (
-                  <div key={c.id} className={`rounded-2xl p-4 border transition-colors ${c.status === 'libre' ? 'bg-white border-[#16A34A]/40' : 'bg-[#7C3AED]/5 border-[#7C3AED]/40'}`}>
-                    <div className="text-xl mb-1">🎾</div>
-                    <p className="font-bold text-sm">{c.name}</p>
-                    <p className="text-[10px] text-[#62626A]">${c.price.toLocaleString('es-CL')}/tanda</p>
-                    <div className="flex items-center gap-1.5 mt-2">
-                      <span className={`w-2 h-2 rounded-full ${c.status === 'libre' ? 'bg-[#16A34A]' : 'bg-[#7C3AED]'}`} />
-                      <span className={`text-[11px] font-bold ${c.status === 'libre' ? 'text-[#16A34A]' : 'text-[#7C3AED]'}`}>
-                        {c.status === 'libre' ? 'LIBRE' : 'OCUPADA'}
-                      </span>
-                    </div>
-                  </div>
-                )) || (
-                  <>
-                    {[1,2,3,4].map((i) => (
-                      <div key={i} className="bg-white rounded-2xl p-4 border border-[#D9D9D2] animate-pulse"><div className="h-4 bg-gray-200 rounded mb-2"/><div className="h-3 bg-gray-100 rounded"/></div>
-                    ))}
-                  </>
-                )}
-              </div>
-            </div>
-
             {/* Resultado del último escenario */}
             {result && (
-              <div className="bg-[#101014] text-white rounded-3xl p-5 border border-white/10">
+              <div className="bg-[#101014] text-white rounded-3xl p-4 border border-white/10 mt-3">
                 <p className="text-[10px] font-bold text-[#C7F000] uppercase mb-1">Resultado</p>
                 <p className="text-sm whitespace-pre-line">{result.message}</p>
                 <div className="flex items-center gap-2 mt-3 pt-3 border-t border-white/10">
@@ -300,7 +297,6 @@ export default function Demo({ onNavigateHome }: { onNavigateHome: () => void })
               </div>
             )}
           </div>
-        </div>
 
         {/* Timeline de proceso (plegable, secundario) */}
         <div className="bg-white rounded-3xl p-5 border border-[#D9D9D2] mb-6">
