@@ -24,7 +24,12 @@ export const API_BASE_URL = '/api'; // hardcodeado para MSYS2
 
 export default function App() {
   const [currentRoute, setCurrentRoute] = useState<string>(
-    window.location.hash.startsWith('#/') ? window.location.hash.slice(1) : 'landing',
+    (() => {
+      const p = window.location.pathname;
+      if (p.startsWith('/demo')) return 'demo';
+      if (p.startsWith('/club/')) return 'club_microsite';
+      return window.location.hash.startsWith('#/') ? window.location.hash.slice(1) : 'landing';
+    })(),
   );
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
@@ -53,6 +58,7 @@ export default function App() {
       return;
     }
     if (route.startsWith('/club/')) { setCurrentRoute('club_microsite'); return; }
+    if (route === '/demo' || route === 'demo') { setCurrentRoute('demo'); return; }
     if (route === '/' || route === 'landing') { setCurrentRoute('landing'); return; }
     setCurrentRoute(route);
   };
