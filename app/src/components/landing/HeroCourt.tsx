@@ -66,11 +66,19 @@ export const HeroCourt: React.FC<HeroCourtProps> = ({ onNavigate }) => {
             {/* CTAs */}
             <div className="flex flex-col sm:flex-row items-center justify-center lg:justify-start gap-3.5 pt-2">
               <button
+                id="hero-cta-demo"
+                onClick={() => onNavigate?.('/demo')}
+                className="w-full sm:w-auto inline-flex items-center justify-center gap-2.5 px-7 py-3.5 rounded-xl bg-[#C7F000] hover:bg-[#B6DE00] text-[#101014] font-black text-base shadow-sm hover:shadow-md transition-all duration-200 active:scale-[0.98] cursor-pointer"
+              >
+                <span>▶ Probar CanchaLlena</span>
+              </button>
+
+              <button
                 id="hero-cta-primary"
                 onClick={() => onNavigate?.('/login')}
                 className="w-full sm:w-auto inline-flex items-center justify-center gap-2.5 px-7 py-3.5 rounded-xl bg-[#7C3AED] hover:bg-[#6D28D9] text-white font-bold text-base shadow-sm hover:shadow-md transition-all duration-200 active:scale-[0.98] cursor-pointer"
               >
-                <span>Probar gratis 14 días</span>
+                <span>Acceso club</span>
                 <ArrowRight className="w-5 h-5" />
               </button>
 

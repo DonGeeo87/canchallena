@@ -171,13 +171,10 @@ export const Navbar: React.FC<NavbarProps> = ({
 
                 <button
                   id="nav-cta-try-free"
-                  onClick={() => {
-                    if (onOpenAuth) onOpenAuth();
-                    else onNavigate?.('/login');
-                  }}
+                  onClick={() => onNavigate?.('/demo')}
                   className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-[#7C3AED] hover:bg-[#6D28D9] text-white font-semibold text-sm shadow-xs transition-all duration-200 active:scale-[0.98] cursor-pointer"
                 >
-                  <span>Probar gratis</span>
+                  <span>Probar CanchaLlena</span>
                   <ArrowRight className="w-4 h-4" />
                 </button>
               </>

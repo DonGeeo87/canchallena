@@ -7,6 +7,7 @@ import { requireAuth, signToken, type AuthUser } from './_lib/auth.js'
 import { armarPartido, buscarReemplazo, matchScore, rankCandidates } from './_lib/engine.js'
 import { sendWhatsApp, buildInviteMessage, buildReplacementMessage, getGowaConfig } from './_lib/gowa.js'
 import { getSession, setSession, deleteSession, isDuplicateMessage, markMessageProcessed, logBotEvent, tryReserveSlot, isBotEnabled, setBotEnabled } from './_lib/bot_session.js'
+import * as demo from './_lib/demo_engine.js'
 
 const app = express()
 app.use(helmet())
@@ -749,6 +750,33 @@ app.post(`${API_PREFIX}/webhook/gowa`, async (req, res) => {
     `${i + 1}. ${s.court_name} · ${new Date(s.starts_at).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })} h · $${Math.round(s.price).toLocaleString('es-CL')}`
   )
   await sendWhatsApp(jid, `Hola ${player.name}! 🎾\nEsto es lo que hay disponible HOY:\n\n${lineas.join('\n')}\n\nEscribe el número que te interese (ej. "1"), o "menu" para volver.`)
+})
+
+// ============================================================
+// DEMO ENGINE — Sandbox de ventas
+// Endpoints que el frontend /demo usa para simular situaciones
+// sobre el club ficticio 'club-demo'. Sin auth de club (es público de ventas).
+// ============================================================
+
+app.get(`${API_PREFIX}/demo/state`, (_req, res) => {
+  demo.ensureDemoSlots()
+  res.json(demo.getDemoState())
+})
+
+// Cada acción de simulación devuelve el evento generado (mensaje del agente + timeline)
+app.post(`${API_PREFIX}/demo/act`, async (req, res) => {
+  const { action } = req.body as { action?: string }
+  if (!action) return res.status(400).json({ error: 'action requerido' })
+  let ev: any
+  switch (action) {
+    case 'reserva':      ev = demo.simulateNewReservation(); break
+    case 'disponibilidad': ev = demo.simulateAvailabilityQuery(); break
+    case 'crear_partido': ev = demo.simulateCreateMatch(); break
+    case 'cancelacion':   ev = demo.simulateCancellation(); break
+    default: return res.status(400).json({ error: `acción desconocida: ${action}` })
+  }
+  // Timeline: registrar en bot_events para trazabilidad del demo
+  res.json({ ok: true, event: ev, state: demo.getDemoState() })
 })
 
 app.listen(PORT, () => {

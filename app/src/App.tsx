@@ -16,6 +16,7 @@ import { FinalCTA } from './components/landing/FinalCTA';
 import { AuthModal } from './components/auth/AuthModal';
 import { AdminDashboard } from './components/admin/AdminDashboard';
 import { ClubMicrosite } from './components/public/ClubMicrosite';
+import Demo from './components/demo/Demo';
 import { api } from './services/api';
 import { User } from './types';
 
@@ -74,6 +75,10 @@ export default function App() {
 
   if (currentRoute === 'club_microsite') {
     return <ClubMicrosite slug="club-piloto" onNavigateHome={() => setCurrentRoute('landing')} onOpenAuth={() => setIsAuthModalOpen(true)} />;
+  }
+
+  if (currentRoute === 'demo') {
+    return <Demo onNavigateHome={() => setCurrentRoute('landing')} />;
   }
 
   return (
