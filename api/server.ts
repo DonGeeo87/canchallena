@@ -8,6 +8,7 @@ import { armarPartido, buscarReemplazo, matchScore, rankCandidates } from './_li
 import { sendWhatsApp, buildInviteMessage, buildReplacementMessage, getGowaConfig } from './_lib/gowa.js'
 import { getSession, setSession, deleteSession, isDuplicateMessage, markMessageProcessed, logBotEvent, tryReserveSlot, isBotEnabled, setBotEnabled } from './_lib/bot_session.js'
 import * as demo from './_lib/demo_engine.js'
+import { getPlayerStreak, getPartnerStruggle, recommendPartnerChange, getPlayerProgress, findPlayersByLevel, registerMatchResult } from './_lib/coach.js'
 
 const app = express()
 app.use(helmet())
@@ -347,7 +348,20 @@ app.post(`${API_PREFIX}/matches`, requireAuth, (req, res) => {
 
   // Sumar ganados a los de la pareja ganadora, ausencias +1 a los que no jugaron? No: ausencias se cuenta en rechazo.
   const ganadores = winner === 'A' ? [a1, a2] : [b1, b2]
+  const perdedores = winner === 'A' ? [b1, b2] : [a1, a2]
   for (const g of ganadores) db.prepare(`UPDATE players SET ganados = ganados + 1 WHERE id = ?`).run(g.player_id)
+
+  // Registrar resultado en match_player_results (racha / coaching)
+  try {
+    registerMatchResult({
+      clubId: slot.club_id,
+      matchId: matchId,
+      winnerPlayerIds: ganadores.map((g) => g.player_id),
+      loserPlayerIds: perdedores.map((g) => g.player_id),
+      score,
+      playedAt: new Date().toISOString(),
+    })
+  } catch (e) { console.error('registerMatchResult error:', e) }
 
   // Liberar cancha y cerrar partido
   db.prepare(`UPDATE slots SET status = 'libre' WHERE id = ?`).run(om.slot_id)
@@ -362,6 +376,49 @@ app.get(`${API_PREFIX}/stats`, requireAuth, (req, res) => {
   const players = db.prepare(`SELECT id, name, categoria, nivel, ganados, ausencias, dias_sin_jugar FROM players WHERE club_id = ? ORDER BY ganados DESC`).all(clubId)
   const partidosMes = db.prepare(`SELECT COUNT(*) AS n FROM matches WHERE club_id = ? AND status='jugado' AND strftime('%Y-%m', created_at) = strftime('%Y-%m', 'now')`).get(clubId) as any
   res.json({ players, partidosMes: partidosMes.n })
+})
+
+// ============================================================
+// FASE 3 — COACH / RACHAS / PROGRESO / RETENCIÓN (diferenciador)
+// ============================================================
+
+// Rachas y estado de un jugador
+app.get(`${API_PREFIX}/coach/player/:id/streak`, requireAuth, (req, res) => {
+  const playerId = String(req.params.id)
+  const streak = getPlayerStreak(playerId)
+  res.json({ player_id: playerId, ...streak })
+})
+
+// Racha/desempeño con una pareja específica
+app.get(`${API_PREFIX}/coach/player/:id/partner/:partnerId`, requireAuth, (req, res) => {
+  const result = getPartnerStruggle(String(req.params.id), String(req.params.partnerId))
+  res.json(result)
+})
+
+// Progreso + retención del jugador (frecuencia, días sin jugar, riesgo abandono)
+app.get(`${API_PREFIX}/coach/player/:id/progress`, requireAuth, (req, res) => {
+  const progress = getPlayerProgress(String(req.params.id))
+  if (!progress) return res.status(404).json({ error: 'Jugador no encontrado' })
+  res.json(progress)
+})
+
+// Recomendar cambio de pareja por racha perdedora
+app.get(`${API_PREFIX}/coach/player/:id/recommend-partner`, requireAuth, (req, res) => {
+  const { clubId } = (req as any).authUser as AuthUser
+  const playerId = String(req.params.id)
+  const { partner_id } = req.query as { partner_id?: string }
+  if (!partner_id) return res.status(400).json({ error: 'parametro partner_id requerido (pareja actual)' })
+  const rec = recommendPartnerChange(playerId, clubId, partner_id)
+  res.json(rec)
+})
+
+// Buscar jugadores por nivel (matchmaking por categoría)
+app.get(`${API_PREFIX}/coach/find-by-level`, requireAuth, (req, res) => {
+  const { clubId } = (req as any).authUser as AuthUser
+  const { nivel } = req.query as { nivel?: string }
+  if (!nivel) return res.status(400).json({ error: 'parametro nivel requerido (3ª, 4ª, 5ª o 6ª)' })
+  const matching = findPlayersByLevel(clubId, nivel)
+  res.json({ nivel, jugadores: matching })
 })
 
 // ---------- AutoFill FASE A: detectar oportunidades (canchas libres con jugadores suficientes) ----------

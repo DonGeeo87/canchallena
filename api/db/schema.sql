@@ -149,3 +149,26 @@ CREATE TABLE IF NOT EXISTS bot_config (
   key   TEXT PRIMARY KEY,
   value TEXT
 );
+
+-- ============================================================
+-- FASE 3 — Coaching / Rachas / Progreso (diferenciador CanchaLlena)
+-- match_player_results: registra el resultado de CADA jugador por partido,
+-- incluyendo quién fue su pareja y sus rivales. Es lo que permite:
+--   - calcular rachas por pareja (ganar/perder consecutivos con quién)
+--   - recomendar cambio de pareja cuando hay racha perdedora
+--   - medir progreso individual (evolución de resultados, frecuencia)
+CREATE TABLE IF NOT EXISTS match_player_results (
+  id          TEXT PRIMARY KEY,
+  club_id     TEXT NOT NULL REFERENCES clubs(id) ON DELETE CASCADE,
+  match_id    TEXT,                          -- referencia al partido (matches.id) si existe
+  player_id   TEXT NOT NULL REFERENCES players(id) ON DELETE CASCADE,
+  partner_id  TEXT REFERENCES players(id),   -- quién fue su pareja de equipo
+  opponent1_id TEXT REFERENCES players(id),  -- rivales de esa tanda
+  opponent2_id TEXT REFERENCES players(id),
+  won         INTEGER NOT NULL,              -- 1 = ganó, 0 = perdió
+  score       TEXT,                          -- '6-3, 6-4'
+  played_at   TEXT DEFAULT (datetime('now')) -- fecha efectiva del partido
+);
+CREATE INDEX IF NOT EXISTS idx_res_player  ON match_player_results (player_id, played_at);
+CREATE INDEX IF NOT EXISTS idx_res_partner ON match_player_results (partner_id, played_at);
+CREATE INDEX IF NOT EXISTS idx_res_club    ON match_player_results (club_id, played_at);
