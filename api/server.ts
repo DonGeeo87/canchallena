@@ -214,7 +214,7 @@ app.get(`${API_PREFIX}/admin/today`, requireAuth, (req, res) => {
 // ---------- Players (lista de socios del club) ----------
 app.get(`${API_PREFIX}/players`, requireAuth, (req, res) => {
   const { clubId } = (req as any).authUser as AuthUser
-  const rows = db.prepare(`SELECT id, name, phone, categoria, es_nuevo, dias_sin_jugar, nivel, ganados, ausencias FROM players WHERE club_id = ? ORDER BY dias_sin_jugar DESC`).all(clubId)
+  const rows = db.prepare(`SELECT id, name, phone, categoria, es_nuevo, dias_sin_jugar, nivel, ganados, ausencias, categoria_deseada, modalidad, horario_preferido, dias_preferidos, experiencia, objetivo, ficha_completa FROM players WHERE club_id = ? ORDER BY dias_sin_jugar DESC`).all(clubId)
   res.json({ players: rows })
 })
 
