@@ -453,6 +453,54 @@ app.get(`${API_PREFIX}/coach/find-by-level`, requireAuth, (req, res) => {
   res.json({ nivel, jugadores: matching })
 })
 
+// ---------- Actividad del agente (resumen de lo que hizo el bot por club) ----------
+// Multi-tenant: filtra por clubId del token. Agrupa los eventos de hoy + últimos 7 días.
+app.get(`${API_PREFIX}/agent/activity`, requireAuth, (req, res) => {
+  const { clubId } = (req as any).authUser as AuthUser
+
+  // Conteo de eventos HOY (por tipo)
+  const hoy = db.prepare(`
+    SELECT event, COUNT(*) AS n FROM bot_events
+    WHERE club_id = ? AND date(created_at) = date('now', 'localtime')
+    GROUP BY event
+  `).all(clubId) as any[]
+  const hoyMap: Record<string, number> = {}
+  for (const r of hoy) hoyMap[r.event] = r.n
+
+  // Conteo de eventos últimos 7 días
+  const semana = db.prepare(`
+    SELECT event, COUNT(*) AS n FROM bot_events
+    WHERE club_id = ? AND created_at >= datetime('now', '-7 days')
+    GROUP BY event
+  `).all(clubId) as any[]
+  const semanaMap: Record<string, number> = {}
+  for (const r of semana) semanaMap[r.event] = r.n
+
+  // Timeline: últimos 15 eventos del agente (con jugador si lo hay)
+  const timeline = db.prepare(`
+    SELECT be.event, be.data, be.created_at, p.name AS player_name
+    FROM bot_events be
+    LEFT JOIN players p ON p.id = be.player_id
+    WHERE be.club_id = ? AND be.event IN ('mensaje','reserva_ok','invitacion_si','invitacion_no','invitacion_expirada','bot_paused','bot_activated','unirse_partido')
+    ORDER BY be.id DESC LIMIT 15
+  `).all(clubId) as any[]
+
+  res.json({
+    club_id: clubId,
+    hoy: hoyMap,
+    ultimos7dias: semanaMap,
+    // KPIs legibles del agente
+    resumen_hoy: {
+      conversaciones: hoyMap['mensaje'] || 0,
+      reservas_gestionadas: hoyMap['reserva_ok'] || 0,
+      invitaciones_aceptadas: hoyMap['invitacion_si'] || 0,
+      invitaciones_rechazadas: hoyMap['invitacion_no'] || 0,
+      total_eventos: (hoy as any[]).reduce((s, r) => s + r.n, 0),
+    },
+    timeline,
+  })
+})
+
 // ---------- AutoFill FASE A: detectar oportunidades (canchas libres con jugadores suficientes) ----------
 // El admin ve las oportunidades y aprueba. NO crea partidos solo aún (FASE B lo hará).
 app.get(`${API_PREFIX}/autofill/oportunidades`, requireAuth, (req, res) => {
@@ -612,7 +660,7 @@ app.post(`${API_PREFIX}/webhook/gowa`, async (req, res) => {
     const isNo = text === 'N' || text.includes('NO')
     if (isSi) {
       db.prepare(`UPDATE match_invitations SET status='aceptada' WHERE id=?`).run(inv.id)
-      logBotEvent(fromDigits, 'invitacion_si', { invId: inv.id })
+      logBotEvent(fromDigits, 'invitacion_si', { invId: inv.id, club_id: player.club_id, player_id: player.id })
       const aceptadas = db.prepare(`SELECT COUNT(*) AS n FROM match_invitations WHERE open_match_id=? AND status='aceptada'`).get(inv.open_match_id) as any
       const faltan = 4 - aceptadas.n
       const cupoMsg = faltan > 0
@@ -623,7 +671,7 @@ app.post(`${API_PREFIX}/webhook/gowa`, async (req, res) => {
     } else if (isNo) {
       db.prepare(`UPDATE match_invitations SET status='rechazada' WHERE id=?`).run(inv.id)
       db.prepare(`UPDATE players SET ausencias = ausencias + 1 WHERE id = ?`).run(player.id)
-      logBotEvent(fromDigits, 'invitacion_no', { invId: inv.id })
+      logBotEvent(fromDigits, 'invitacion_no', { invId: inv.id, club_id: player.club_id, player_id: player.id })
       const todosEnPartido = db.prepare(`SELECT player_id FROM match_invitations WHERE open_match_id = ?`).all(inv.open_match_id).map((r: any) => r.player_id)
       const salio = db.prepare(`SELECT * FROM players WHERE id = ?`).get(player.id) as any
       const reemplazo = buscarReemplazo(salio.club_id, salio, todosEnPartido)
@@ -773,7 +821,7 @@ app.post(`${API_PREFIX}/webhook/gowa`, async (req, res) => {
       return
     }
     deleteSession(fromDigits)
-    logBotEvent(fromDigits, 'reserva_ok', { slot: seleccionada.id })
+    logBotEvent(fromDigits, 'reserva_ok', { slot: seleccionada.id, club_id: player.club_id, player_id: player.id })
     const esHoy = new Date(seleccionada.starts_at).toISOString().slice(0, 10) === new Date().toISOString().slice(0, 10)
     const fechaReserva = esHoy
       ? `Hoy ${new Date(seleccionada.starts_at).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })} h`

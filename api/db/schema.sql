@@ -139,8 +139,10 @@ CREATE TABLE IF NOT EXISTS processed_messages (
 -- Eventos del bot (observabilidad)
 CREATE TABLE IF NOT EXISTS bot_events (
   id         INTEGER PRIMARY KEY AUTOINCREMENT,
-  phone      TEXT,
-  event      TEXT NOT NULL,   -- mensaje | intent | reserva | invitacion | error
+  club_id    TEXT,                          -- club al que pertenece la acción (multi-tenant)
+  player_id  TEXT,                          -- jugador involucrado (si aplica)
+  phone      TEXT,                          -- número del jugador / quién disparó
+  event      TEXT NOT NULL,   -- mensaje | reserva | invitacion_si | invitacion_no | ...
   data       TEXT,
   created_at TEXT DEFAULT (datetime('now'))
 );

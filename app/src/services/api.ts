@@ -299,6 +299,25 @@ export const api = {
     },
   },
 
+  agent: {
+    // Resumen de la actividad del agente por club (lo que hizo el bot sin intervención humana)
+    async getActivity(): Promise<{
+      club_id: string;
+      hoy: Record<string, number>;
+      ultimos7dias: Record<string, number>;
+      resumen_hoy: {
+        conversaciones: number;
+        reservas_gestionadas: number;
+        invitaciones_aceptadas: number;
+        invitaciones_rechazadas: number;
+        total_eventos: number;
+      };
+      timeline: Array<{ event: string; data: string; created_at: string; player_name?: string }>;
+    }> {
+      return request('/agent/activity');
+    },
+  },
+
   public: {
     async getClub(slug: string): Promise<Club> {
       const data = await request<{ club: ApiClubRaw; courts: ApiCourtRaw[]; freeSlots: ApiSlotRaw[] }>(`/public/club/${slug}`);

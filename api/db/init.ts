@@ -38,4 +38,16 @@ if (!adminCols.includes('password_hash')) {
   console.log('Migración: admins.password_hash añadido')
 }
 
+// bot_events.club_id / bot_events.player_id (actividad del agente multi-tenant)
+let evCols = columns('bot_events')
+if (!evCols.includes('club_id')) {
+  db.exec(`ALTER TABLE bot_events ADD COLUMN club_id TEXT`)
+  console.log('Migración: bot_events.club_id añadido')
+}
+evCols = columns('bot_events')
+if (!evCols.includes('player_id')) {
+  db.exec(`ALTER TABLE bot_events ADD COLUMN player_id TEXT`)
+  console.log('Migración: bot_events.player_id añadido')
+}
+
 console.log('✅ Schema aplicado: tablas creadas/verificadas + migraciones en SQLite.')

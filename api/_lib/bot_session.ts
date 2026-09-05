@@ -75,8 +75,11 @@ export function markMessageProcessed(messageId: string, phone: string, intent: s
 export function logBotEvent(phone: string, event: string, data: any = null): void {
   try {
     const dataStr = data ? JSON.stringify(data).slice(0, 500) : null
-    db.prepare(`INSERT INTO bot_events (phone, event, data) VALUES (?, ?, ?)`)
-      .run(phone, event, dataStr)
+    // Extraer club_id y player_id del data cuando aplique
+    const clubId = data?.club_id || data?.clubId || null
+    const playerId = data?.player_id || data?.playerId || null
+    db.prepare(`INSERT INTO bot_events (club_id, player_id, phone, event, data) VALUES (?, ?, ?, ?, ?)`)
+      .run(clubId, playerId, phone, event, dataStr)
   } catch (e) {
     // No bloquear el flujo si el log falla
     console.error('[bot_events] error:', e)

@@ -12,10 +12,12 @@ import {
   MessageSquare,
   Zap,
   TrendingUp,
+  Bot,
   LogOut,
   X
 } from 'lucide-react';
 import { PadelBall } from '../common/PadelBall';
+import AgentActivity from './AgentActivity';
 import { api } from '../../services/api';
 import { User, Court, Player, OpenMatch } from '../../types';
 
@@ -30,7 +32,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   onLogout,
   onNavigateHome,
 }) => {
-  const [activeTab, setActiveTab] = useState<'overview' | 'grid' | 'matchmaking' | 'players' | 'settings'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'grid' | 'matchmaking' | 'players' | 'settings' | 'agent'>('overview');
   const [summaryData, setSummaryData] = useState<any>(null);
   const [courts, setCourts] = useState<Court[]>([]);
   const [players, setPlayers] = useState<Player[]>([]);
@@ -207,6 +209,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               { id: 'grid', label: 'Grilla de Canchas', icon: Calendar },
               { id: 'matchmaking', label: 'Matchmaking & Partidos 4/4', icon: Trophy },
               { id: 'players', label: 'Comunidad de Jugadores', icon: Users },
+              { id: 'agent', label: 'Actividad del Agente', icon: Bot },
               { id: 'settings', label: 'Configuración de Canchas', icon: Settings },
             ].map((tab) => {
               const Icon = tab.icon;
@@ -426,6 +429,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
           </div>
         )}
+
+        {/* TAB: ACTIVIDAD DEL AGENTE */}
+        {activeTab === 'agent' && <AgentActivity />}
 
         {/* TAB 2: GRID / CALENDAR DETAILED */}
         {activeTab === 'grid' && (
