@@ -28,7 +28,8 @@ if (!clubCols.includes('whatsapp')) {
 // admins.email / admins.password_hash
 let adminCols = columns('admins')
 if (!adminCols.includes('email')) {
-  db.exec(`ALTER TABLE admins ADD COLUMN email TEXT UNIQUE`)
+  // NOTA: SQLite no permite ADD COLUMN UNIQUE; la unicidad la valida la app en el register.
+  db.exec(`ALTER TABLE admins ADD COLUMN email TEXT`)
   console.log('Migración: admins.email añadido')
 }
 adminCols = columns('admins')
