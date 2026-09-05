@@ -10,6 +10,8 @@ CREATE TABLE IF NOT EXISTS clubs (
   slug       TEXT UNIQUE NOT NULL,
   city       TEXT,
   currency   TEXT DEFAULT 'CLP',
+  plan       TEXT DEFAULT 'Starter',      -- Starter | Club | Pro
+  whatsapp   TEXT DEFAULT '',             -- número WhatsApp del bot del club
   created_at TEXT DEFAULT (datetime('now'))
 );
 
@@ -34,6 +36,8 @@ CREATE TABLE IF NOT EXISTS admins (
   id         TEXT PRIMARY KEY,
   club_id    TEXT NOT NULL REFERENCES clubs(id) ON DELETE CASCADE,
   name       TEXT,
+  email      TEXT UNIQUE,
+  password_hash TEXT,
   phone      TEXT UNIQUE,
   created_at TEXT DEFAULT (datetime('now'))
 );

@@ -1,6 +1,7 @@
 import express from 'express'
 import cors from 'cors'
 import helmet from 'helmet'
+import bcrypt from 'bcryptjs'
 import { randomUUID } from 'node:crypto'
 import { db } from './_lib/db.js'
 import { requireAuth, signToken, type AuthUser } from './_lib/auth.js'
@@ -23,14 +24,45 @@ app.get(`${API_PREFIX}/health`, (_req, res) => {
   res.json({ ok: true, service: 'canchallena-api', time: new Date().toISOString() })
 })
 
-// ---------- Auth (MVP simple: login por teléfono admin + clave) ----------
+// ---------- Auth (multi-tenant: login por email + clave por admin) ----------
 app.post(`${API_PREFIX}/auth/login`, (req, res) => {
-  // En el MVP, la auth de un solo admin por club es directa desde la tabla admins.
-  // Simplificación de desarrollo: token firmado con clubId del primer admin si existe.
-  const admin = db.prepare(`SELECT id, club_id, name FROM admins LIMIT 1`).get() as any
-  if (!admin) return res.status(400).json({ error: 'No hay admin; ejecuta db:seed' })
-  const user: AuthUser = { adminId: admin.id, clubId: admin.club_id, phone: '' }
-  res.json({ token: signToken(user), admin })
+  const { email, password } = req.body as { email?: string; password?: string }
+
+  // Sin credenciales -> compat con demo (dev): primer admin
+  if (!email || !password) {
+    const admin = db.prepare(`SELECT id, club_id, name FROM admins LIMIT 1`).get() as any
+    if (!admin) return res.status(400).json({ error: 'No hay admin; ejecuta db:seed' })
+    const user: AuthUser = { adminId: admin.id, clubId: admin.club_id, phone: '' }
+    return res.json({ token: signToken(user), admin })
+  }
+
+  // Login real por email/clave
+  const admin = db.prepare(`SELECT * FROM admins WHERE email = ?`).get(email.toLowerCase()) as any
+  if (!admin || !admin.password_hash) return res.status(401).json({ error: 'Credenciales inválidas' })
+  const ok = bcrypt.compareSync(password, admin.password_hash)
+  if (!ok) return res.status(401).json({ error: 'Credenciales inválidas' })
+  const user: AuthUser = { adminId: admin.id, clubId: admin.club_id, phone: admin.phone || '' }
+  res.json({ token: signToken(user), admin: { id: admin.id, name: admin.name, email: admin.email, club_id: admin.club_id } })
+})
+
+// ---------- Onboarding: registrar un club nuevo + su admin ----------
+app.post(`${API_PREFIX}/auth/register`, (req, res) => {
+  const { club_name, slug, city, plan, admin_name, admin_email, admin_password, whatsapp } = req.body as Record<string, string>
+  if (!club_name || !slug || !admin_email || !admin_password) {
+    return res.status(400).json({ error: 'club_name, slug, admin_email y admin_password requeridos' })
+  }
+  // Slug único
+  const exists = db.prepare(`SELECT id FROM clubs WHERE slug = ?`).get(slug)
+  if (exists) return res.status(409).json({ error: 'Ya existe un club con ese slug' })
+  const clubId = randomUUID()
+  db.prepare(`INSERT INTO clubs (id, name, slug, city, currency, plan, whatsapp) VALUES (?, ?, ?, ?, 'CLP', ?, ?)`)
+    .run(clubId, club_name, slug, city || '', plan || 'Starter', whatsapp || '')
+  const adminId = randomUUID()
+  const hash = bcrypt.hashSync(admin_password, 10)
+  db.prepare(`INSERT INTO admins (id, club_id, name, email, password_hash) VALUES (?, ?, ?, ?, ?)`)
+    .run(adminId, clubId, admin_name || 'Admin', admin_email.toLowerCase(), hash)
+  const user: AuthUser = { adminId, clubId, phone: whatsapp || '' }
+  res.status(201).json({ club_id: clubId, admin_id: adminId, token: signToken(user), message: 'Club y admin creados' })
 })
 
 // ---------- Club (tenant) ----------
@@ -83,9 +115,9 @@ app.post(`${API_PREFIX}/booking`, (req, res) => {
   if (!slot) return res.status(404).json({ error: 'Slot no encontrado' })
   if (slot.status === 'reservada') return res.status(409).json({ error: 'Slot ya reservado' })
 
-  // Upsert jugador por teléfono (identificador del bot)
-  let player = db.prepare(`SELECT * FROM players WHERE phone = ?`).get(phone) as any
+  // Upsert jugador por teléfono + club (aislamiento multi-tenant)
   const club = db.prepare(`SELECT club_id FROM courts WHERE id = ?`).get(slot.court_id) as any
+  let player = db.prepare(`SELECT * FROM players WHERE club_id = ? AND phone = ?`).get(club.club_id, phone) as any
   if (!player) {
     const id = randomUUID()
     db.prepare(`INSERT INTO players (id, club_id, name, phone) VALUES (?, ?, ?, ?)`)
