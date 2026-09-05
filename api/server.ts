@@ -10,6 +10,7 @@ import { sendWhatsApp, buildInviteMessage, buildReplacementMessage, getGowaConfi
 import { getSession, setSession, deleteSession, isDuplicateMessage, markMessageProcessed, logBotEvent, tryReserveSlot, isBotEnabled, setBotEnabled } from './_lib/bot_session.js'
 import * as demo from './_lib/demo_engine.js'
 import { getPlayerStreak, getPartnerStruggle, recommendPartnerChange, getPlayerProgress, findPlayersByLevel, registerMatchResult } from './_lib/coach.js'
+import { ensureClubSlots, getClubAvailability, getClubAvailabilityMultiDay } from './_lib/slots_gen.js'
 
 const app = express()
 app.use(helmet())
@@ -96,13 +97,18 @@ app.post(`${API_PREFIX}/courts`, requireAuth, (req, res) => {
 app.get(`${API_PREFIX}/slots`, requireAuth, (req, res) => {
   const { clubId } = (req as any).authUser as AuthUser
   const date = (req.query.date as string) || new Date().toISOString().slice(0, 10)
-  const rows = db.prepare(`
-    SELECT s.*, c.name AS court_name, c.price_per_slot
-    FROM slots s JOIN courts c ON c.id = s.court_id
-    WHERE c.club_id = ? AND s.starts_at LIKE ?
-    ORDER BY s.starts_at
-  `).all(clubId, `${date}%`)
+  // Asegurar que existan slots para hoy (disponibilidad real)
+  ensureClubSlots(clubId, date)
+  const rows = getClubAvailability(clubId, date)
   res.json(rows)
+})
+
+// ---------- Disponibilidad multi-día (agente: si hoy no hay, ofrece próximos días) ----------
+app.get(`${API_PREFIX}/disponibilidad`, requireAuth, (req, res) => {
+  const { clubId } = (req as any).authUser as AuthUser
+  const daysAhead = Number(req.query.days) || 3
+  const result = getClubAvailabilityMultiDay(clubId, daysAhead)
+  res.json(result)
 })
 
 // ---------- Reservas (booking) ----------
