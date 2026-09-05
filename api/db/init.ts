@@ -50,4 +50,14 @@ if (!evCols.includes('player_id')) {
   console.log('Migración: bot_events.player_id añadido')
 }
 
+// players — ficha del socio (onboarding / coach)
+const fichaCols = ['categoria_deseada','modalidad','horario_preferido','dias_preferidos','fecha_nacimiento','experiencia','objetivo','coach_activo','ficha_completa','updated_at']
+for (const col of fichaCols) {
+  const cur = columns('players')
+  if (!cur.includes(col)) {
+    db.exec(`ALTER TABLE players ADD COLUMN ${col} TEXT`)
+    console.log(`Migración: players.${col} añadido`)
+  }
+}
+
 console.log('✅ Schema aplicado: tablas creadas/verificadas + migraciones en SQLite.')

@@ -648,9 +648,84 @@ app.post(`${API_PREFIX}/webhook/gowa`, async (req, res) => {
     return
   }
 
-  const player = db.prepare(`SELECT id, name, club_id FROM players WHERE REPLACE(REPLACE(REPLACE(phone,'+',''),' ',''),'-','') = ? OR phone LIKE ?`).get(fromDigits, `%${fromDigits.slice(-9)}%`) as any
+  // Resolver jugador por número (reconocimiento del socio por su número de WhatsApp)
+  const player = db.prepare(`SELECT * FROM players WHERE REPLACE(REPLACE(REPLACE(phone,'+',''),' ',''),'-','') = ? OR phone LIKE ?`).get(fromDigits, `%${fromDigits.slice(-9)}%`) as any
   if (!player) return
-  logBotEvent(fromDigits, 'mensaje', { text: rawText.slice(0, 50) })
+  logBotEvent(fromDigits, 'mensaje', { text: rawText.slice(0, 50), club_id: player.club_id, player_id: player.id })
+
+  // ── ONBOARDING DEL SOCIO (FICHA) ──
+  // Reconoce al socio por número; si es nuevo o sin ficha, inicia la captura de datos en español.
+  const sesionActual = getSession(fromDigits)
+
+  // Máquina de pasos de ficha: [nombre_campo, pregunta]
+  const FICHA_PASOS: Array<[string, (nombre: string) => string]> = [
+    ['categoria_deseada', (n) => `🎾 ¡Perfecto, ${n}! Primero, para armarte un plan de progreso personalizado:\n\n¿A qué categoría aspiras?\n• 3ª (avanzado)\n• 4ª (medio-alto)\n• 5ª (medio)\n• 6ª (nuevo)\n\nResponde la categoría (ej. "4ª") o escribe "saltar"`],
+    ['modalidad', () => `¿Sueles jugar solo (con pareja) o en pareja fija?\n\n• solo\n• pareja fija\n• cualquiera`],
+    ['horario_preferido', () => `¿Hora del día prefieres jugar?\n\n• mañana\n• tarde\n• noche\n• cualquiera`],
+    ['dias_preferidos', () => `¿Qué días de la semana prefieres?\n\n• entre semana\n• fin de semana\n• cualquiera`],
+    ['experiencia', () => `¿Cuánta experiencia tienes jugando pádel?\n\n• nunca\n• poco\n• intermedio\n• avanzado`],
+    ['objetivo', () => `¿Cuál es tu objetivo?\n\n• divertirme\n• competir\n• subir de nivel\n• conocer gente`],
+  ]
+
+  // Estado: capturando un campo de la ficha. El payload.paso indica qué campo captura la RESPUESTA
+  // que llegó ahora. La pregunta para ese campo ya fue enviada en el turno anterior.
+  if (sesionActual && sesionActual.state === 'onboarding_ficha') {
+    const idx = Number((sesionActual.payload ? JSON.parse(sesionActual.payload as string) : {}).paso || 0)
+    const nombre = player.name || 'socio'
+    // idx es el campo que capturamos con la respuesta actual
+    const campo = FICHA_PASOS[idx]?.[0]
+    if (campo) {
+      // Guardar la respuesta recibida
+      const valor = (text === 'SALTAR' || text === 'SKIP') ? null : text
+      db.prepare(`UPDATE players SET ${campo} = ?, updated_at = datetime('now') WHERE id = ?`).run(valor, player.id)
+      // Avanzar al siguiente campo
+      const sig = idx + 1
+      if (sig >= FICHA_PASOS.length) {
+        // Ficha completa → marcar
+        db.prepare(`UPDATE players SET ficha_completa = 1, coach_activo = 1, updated_at = datetime('now') WHERE id = ?`).run(player.id)
+        deleteSession(fromDigits)
+        logBotEvent(fromDigits, 'ficha_completada', { club_id: player.club_id, player_id: player.id })
+        await sendWhatsApp(jid, `✅ ¡Listo, ${nombre}! Tu ficha de socio quedó armada 🎾📝\n\nYa sé tu categoría, modalidad, horarios y objetivo.\n\n¿Quieres que armemos tu plan de progreso?\n\n• "menu" para ver el menú principal\n• "plan" para armar tu plan de progreso`)
+        markMessageProcessed(messageId, fromDigits, 'ficha_completada')
+        return
+      }
+      // Enviar la pregunta del siguiente campo y guardar el nuevo paso
+      setSession(fromDigits, player.club_id, 'onboarding_ficha', { paso: sig })
+      await sendWhatsApp(jid, FICHA_PASOS[sig][1](nombre))
+      markMessageProcessed(messageId, fromDigits, `ficha_paso_${sig}`)
+      return
+    }
+  }
+
+  // Estado: onboarding iniciado pero preguntando el nombre
+  if (sesionActual && sesionActual.state === 'onboarding_nombre') {
+    if (text !== 'SKIP' && text !== 'SALTAR') {
+      db.prepare(`UPDATE players SET name = ?, updated_at = datetime('now') WHERE id = ?`).run(text, player.id)
+    }
+    // Iniciar captura de ficha (paso 0 = categoria)
+    setSession(fromDigits, player.club_id, 'onboarding_ficha', { paso: 0 })
+    const nombre = (text !== 'SKIP' && text !== 'SALTAR') ? text : (player.name || 'nuevo socio')
+    await sendWhatsApp(jid, FICHA_PASOS[0][1](nombre))
+    markMessageProcessed(messageId, fromDigits, 'ficha_inicio')
+    return
+  }
+
+  // Si el socio NO tiene la ficha completa, iniciar onboarding
+  const fichaCompleta = player.ficha_completa === 1
+  const yaEsConocido = player.name && player.name !== 'nuevo'
+  if (!fichaCompleta && !sesionActual) {
+    if (!yaEsConocido || player.name === 'nuevo') {
+      setSession(fromDigits, player.club_id, 'onboarding_nombre', {})
+      await sendWhatsApp(jid, `¡Hola! 👋 Bienvenido al club 🎾\n\nSoy CanchaLlena, tu agente del club. Me encargaré de tus reservas, partidos y de ayudarte a progresar en la cancha.\n\nPara conocerte mejor, ¿cómo te llamas? (Escribe tu nombre)`)
+      markMessageProcessed(messageId, fromDigits, 'onboarding_bienvenida')
+      return
+    }
+    // Socio conocido pero sin ficha → iniciar captura directo
+    setSession(fromDigits, player.club_id, 'onboarding_ficha', { paso: 0 })
+    await sendWhatsApp(jid, `🎾 ¡Hola, ${player.name}! Quiero conocerte mejor para armarte un plan de progreso.\n\n` + FICHA_PASOS[0][1](player.name))
+    markMessageProcessed(messageId, fromDigits, 'ficha_inicio')
+    return
+  }
 
   // ── FLUJO 1: ¿Hay una invitación pendiente para este jugador? Entonces SI/NO.
   const inv = db.prepare(`SELECT mi.id, mi.open_match_id, mi.status FROM match_invitations mi WHERE mi.player_id = ? AND mi.status='pendiente' ORDER BY mi.created_at DESC LIMIT 1`).get(player.id) as any

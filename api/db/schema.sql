@@ -53,6 +53,17 @@ CREATE TABLE IF NOT EXISTS players (
   nivel      TEXT DEFAULT 'Medio',         -- 'Nuevo' | 'Medio' | 'Avanzado'
   ganados    INTEGER DEFAULT 0,            -- partidos ganados (registro del marcador)
   ausencias  INTEGER DEFAULT 0,            -- no-shows / rechazos
+  -- ═══ Ficha del socio (onboarding / coach) ═══
+  categoria_deseada TEXT,                  -- categoría a la que aspira (3ª, 4ª...)
+  modalidad   TEXT DEFAULT 'cualquiera',   -- solo | pareja | cualquiera (preferencia de juego)
+  horario_preferido TEXT,                  -- ej. 'tarde', 'noche', 'mañana', o rango '19-22'
+  dias_preferidos TEXT,                    -- ej. 'L,M,X' o 'entre semana' / 'fin de semana'
+  fecha_nacimiento TEXT,                   -- para ubicar edad/nivel
+  experiencia TEXT DEFAULT 'nuevo',        -- 'nunca', 'poco', 'intermedio', 'avanzado'
+  objetivo TEXT,                           -- plan de progreso: 'divertirse', 'competir', 'subir nivel'
+  coach_activo INTEGER DEFAULT 0,          -- si ya completó su plan de progreso
+  ficha_completa INTEGER DEFAULT 0,        -- 1 = completó el onboarding (ficha armada)
+  updated_at TEXT DEFAULT (datetime('now')),
   created_at TEXT DEFAULT (datetime('now'))
 );
 
