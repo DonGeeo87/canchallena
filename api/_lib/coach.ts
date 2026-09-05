@@ -201,6 +201,113 @@ export function getPlayerProgress(playerId: string) {
 }
 
 // ------------------------------------------------------------------
+// PLAN DE PROGRESO PERSONALIZADO (FASE 3 — diferenciador)
+// Combina la FICHA del socio (categoria, modalidad, horario, objetivo)
+// con su HISTORIAL (progreso, rachas, recomendacion de pareja)
+// para generar una estrategia unica de mejora y retencion.
+// ------------------------------------------------------------------
+export function crearPlanProgreso(playerId: string) {
+  const player = db.prepare(`SELECT * FROM players WHERE id = ?`).get(playerId) as any
+  if (!player) return null
+
+  const progress = getPlayerProgress(playerId)
+  if (!progress) return null
+
+  // Datos de la ficha (con defaults para no romper)
+  const objetivo = player.objetivo || 'divertirme'
+  const modalidad = player.modalidad || 'cualquiera'
+  const horarioPref = player.horario_preferido || 'cualquiera'
+  const categoria = player.categoria || '6ª'
+  const categoriaDeseada = player.categoria_deseada || categoria
+  const diasPref = player.dias_preferidos || 'cualquiera'
+  const experiencia = player.experiencia || 'nuevo'
+
+  const catRank: Record<string, number> = { '3ª': 3, '4ª': 4, '5ª': 5, '6ª': 6 }
+  const actual = catRank[categoria] ?? 6
+  const deseada = catRank[categoriaDeseada] ?? 6
+
+  // Consejos por objetivo
+  const consejosObjetivo: Record<string, string> = {
+    'divertirme': 'Prioriza jugar seguido en tu horario preferido y con parejas de tu nivel para disfrutar sin presión. La constancia es lo que más retiene.',
+    'competir': 'Busca partidos con rivales un nivel arriba. Registra cada resultado para que el club arme tus partidos con oponentes que te exijan.',
+    'subir de nivel': `Para subir de ${categoria} a ${categoriaDeseada}, juega 2 veces por semana y prueba con parejas del nivel superior (${categoriaDeseada}). Pide el match de nivel adecuado.`,
+    'conocer gente': 'Únete a partidos abiertos de tu nivel. Es la mejor forma de conocer parejas y rivales regulares.',
+  }
+  const consejo = consejosObjetivo[objetivo] || consejosObjetivo['divertirme']
+
+  // Consejo por modalidad
+  const consejoModalidad = modalidad === 'pareja fija'
+    ? 'Al jugar con pareja fija, la química importa: si van en racha perdedora, considera rotar ocasionalmente.'
+    : modalidad === 'solo'
+    ? 'Al jugar solo (buscando pareja), aprovecha el matchmaking por nivel para encontrar compañeros compatibles.'
+    : 'Tu flexibilidad te permite cubrir cupos libres con facilidad, ideal para llenar horarios y jugar más seguido.'
+
+  // Frecuencia recomendada según retención
+  let frecuencia = 'Semanal'
+  let consejoFrecuencia = ''
+  if (progress.daysSinceLastMatch === null || progress.daysSinceLastMatch > 7) {
+    frecuencia = '2 veces por semana'
+    consejoFrecuencia = `⚠️ No juegas hace ${progress.daysSinceLastMatch ?? 'algo'} días. Para no perder ritmo, te sugiero reservar en tus horarios preferidos (${horarioPref}).`
+  } else {
+    consejoFrecuencia = `Sigue jugando ${frecuencia.toLowerCase()} para mantener el ritmo y el progreso.`
+  }
+
+  return {
+    socio: {
+      nombre: player.name,
+      categoria,
+      categoria_deseada: categoriaDeseada,
+      modalidad,
+      horario_preferido: horarioPref,
+      dias_preferidos: diasPref,
+      objetivo,
+      experiencia,
+    },
+    historial: {
+      partidos: progress.totalMatches,
+      ganados: progress.wins,
+      perdidos: progress.losses,
+      winrate: progress.winRate,
+      racha_actual: progress.currentStreak,
+      riesgo_retencion: progress.retentionRisk,
+    },
+    estrategia: {
+      frecuencia_recomendada: frecuencia,
+      consejo_objetivo: consejo,
+      consejo_modalidad: consejoModalidad,
+      consejo_frecuencia: consejoFrecuencia,
+      recomendacion_pareja: player.name ? buscarRecomendacionPareja(player, catRank) : null,
+    },
+    mensaje: `🎯 **Plan de progreso para ${player.name}**\n\n` +
+      `${consejoFrecuencia}\n\n` +
+      `${consejo}\n\n` +
+      `${consejoModalidad}\n\n` +
+      (player.name ? buscarRecomendacionPareja(player, catRank)?.mensaje || '' : ''),
+  }
+}
+
+function buscarRecomendacionPareja(player: any, catRank: Record<string, number>) {
+  // Encontrar mejor pareja potencial por nivel similar / en racha ganadora
+  const clubId = player.club_id
+  const candidates = db.prepare(`SELECT * FROM players WHERE club_id = ? AND id != ?`).all(clubId, player.id) as any[]
+  const scored = candidates.map((c) => {
+    const diff = Math.abs((catRank[c.categoria] ?? 5) - (catRank[player.categoria] ?? 5))
+    const streak = getPlayerStreak(c.id)
+    let score = 100 - diff * 20
+    if (streak.streakType === 'win') score += 15
+    return { perfil: c, score, diff }
+  }).sort((a, b) => b.score - a.score)
+
+  const mejor = scored[0]
+  if (!mejor) return null
+  return {
+    pareja_sugerida: mejor.perfil.name,
+    diferencia_nivel: mejor.diff,
+    mensaje: `💡 Tu pareja ideal en el club es **${mejor.perfil.name}** (${mejor.perfil.categoria}). Jugar con ${mejor.perfil.name} puede mejorar tu ritmo de juego.`,
+  }
+}
+
+// ------------------------------------------------------------------
 // BUSCAR PARTIDO POR NIVEL
 // Dado el nivel del jugador (3ª-6ª), encuentra jugadores compatibles
 // ------------------------------------------------------------------

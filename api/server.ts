@@ -9,7 +9,7 @@ import { armarPartido, buscarReemplazo, matchScore, rankCandidates } from './_li
 import { sendWhatsApp, buildInviteMessage, buildReplacementMessage, getGowaConfig } from './_lib/gowa.js'
 import { getSession, setSession, deleteSession, isDuplicateMessage, markMessageProcessed, logBotEvent, tryReserveSlot, isBotEnabled, setBotEnabled } from './_lib/bot_session.js'
 import * as demo from './_lib/demo_engine.js'
-import { getPlayerStreak, getPartnerStruggle, recommendPartnerChange, getPlayerProgress, findPlayersByLevel, registerMatchResult } from './_lib/coach.js'
+import { getPlayerStreak, getPartnerStruggle, recommendPartnerChange, getPlayerProgress, findPlayersByLevel, registerMatchResult, crearPlanProgreso } from './_lib/coach.js'
 import { ensureClubSlots, getClubAvailability, getClubAvailabilityMultiDay } from './_lib/slots_gen.js'
 
 const app = express()
@@ -448,6 +448,13 @@ app.get(`${API_PREFIX}/coach/player/:id/recommend-partner`, requireAuth, (req, r
   if (!partner_id) return res.status(400).json({ error: 'parametro partner_id requerido (pareja actual)' })
   const rec = recommendPartnerChange(playerId, clubId, partner_id)
   res.json(rec)
+})
+
+// Plan de progreso personalizado del jugador (ficha + historial)
+app.get(`${API_PREFIX}/coach/player/:id/plan`, requireAuth, (req, res) => {
+  const plan = crearPlanProgreso(String(req.params.id))
+  if (!plan) return res.status(404).json({ error: 'Jugador no encontrado o sin historial' })
+  res.json(plan)
 })
 
 // Buscar jugadores por nivel (matchmaking por categoría)
