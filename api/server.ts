@@ -408,6 +408,50 @@ app.post(`${API_PREFIX}/matches`, requireAuth, (req, res) => {
   res.status(201).json({ match_id: matchId, score, winner, ganadores: ganadores.map((g) => g.name) })
 })
 
+// ---------- Registrar resultado de un partido que el SOCIO reporta (reporte por telefono) ----------
+// El socio le dice al agente "Gané 6-3 6-4 con pareja X contra Y y Z".
+// La API registra el resultado sin que el socio conozca open_match_id.
+app.post(`${API_PREFIX}/matches/report`, requireAuth, (req, res) => {
+  const { phone, partner_phone, opponent1_phone, opponent2_phone, score, won } = req.body
+  if (!phone || !partner_phone || !opponent1_phone || !opponent2_phone || typeof won !== 'boolean') {
+    return res.status(400).json({ error: 'phone, partner_phone, opponent1_phone, opponent2_phone, score y won requeridos' })
+  }
+  // Resolver jugadores por teléfono y club del que reporta
+  const clubId = (req as any).authUser.clubId
+  const find = (ph: string) => {
+    const digits = String(ph).replace(/[^0-9]/g, '')
+    return db.prepare(`SELECT id, name, club_id FROM players WHERE club_id=? AND REPLACE(REPLACE(REPLACE(phone,'+',''),' ',''),'-','') LIKE ?`).get(clubId, `%${digits.slice(-9)}%`) as any
+  }
+  const p = find(phone)
+  const partner = find(partner_phone)
+  const opp1 = find(opponent1_phone)
+  const opp2 = find(opponent2_phone)
+  if (!p || !partner || !opp1 || !opp2) {
+    return res.status(400).json({ error: 'No se encontraron todos los jugadores por teléfono' })
+  }
+  // Registrar resultado
+  const matchId = randomUUID()
+  try {
+    registerMatchResult({
+      clubId,
+      matchId,
+      winnerPlayerIds: won ? [p.id, partner.id] : [opp1.id, opp2.id],
+      loserPlayerIds: won ? [opp1.id, opp2.id] : [p.id, partner.id],
+      score: score || null,
+      playedAt: new Date().toISOString(),
+    })
+  } catch (e) {
+    return res.status(400).json({ error: String(e) })
+  }
+  // Log
+  logBotEvent(phone, 'resultado_reportado', { club_id: clubId, player_id: p.id, won, score })
+  res.status(201).json({
+    ok: true,
+    socio: p.name, pareja: partner.name, rivales: [opp1.name, opp2.name],
+    resultado: won ? 'GANADO' : 'PERDIDO', score: score || '',
+  })
+})
+
 // ---------- Estadísticas (paso 9) ----------
 app.get(`${API_PREFIX}/stats`, requireAuth, (req, res) => {
   const { clubId } = (req as any).authUser as AuthUser
