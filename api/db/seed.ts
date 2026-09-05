@@ -89,5 +89,57 @@ for (const [name, phone, categoria, es_nuevo, dias, nivel, ganados] of demoPlaye
   db.prepare(`INSERT OR IGNORE INTO players (id, club_id, name, phone, categoria, es_nuevo, dias_sin_jugar, nivel, ganados) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
     .run(randomUUID(), demoId, name, phone, categoria, es_nuevo, dias, nivel, ganados)
 }
-console.log('✅ Seed: club piloto (2 canchas, 12 jug) + club DEMO Los Guerreros (4 canchas, 12 jug).')
+
+// Ampliación del club demo a 50 socios (38 adicionales) para simulaciones realistas
+// Distribución objetivo (50 total): 3ª=5, 4ª=15, 5ª=18, 6ª=12
+const demoExtra = [
+  // 3ª (2)
+  ['Rodrigo Contreras', '+5692-0001', '3ª', 0, 1, 'Avanzado', 12],
+  ['Matías Herrera', '+5692-0002', '3ª', 0, 2, 'Avanzado', 11],
+  // 4ª (11)
+  ['Ignacio Vera', '+5692-0003', '4ª', 0, 3, 'Medio', 8],
+  ['Sebastián Rojas', '+5692-0004', '4ª', 0, 4, 'Medio', 7],
+  ['Cristóbal Paredes', '+5692-0005', '4ª', 0, 1, 'Medio', 9],
+  ['Tomás Fuenzalida', '+5692-0006', '4ª', 0, 2, 'Medio', 6],
+  ['Vicente Morales', '+5692-0007', '4ª', 0, 5, 'Medio', 7],
+  ['Benjamín Soto', '+5692-0008', '4ª', 0, 3, 'Medio', 8],
+  ['Martín Navarro', '+5692-0009', '4ª', 0, 6, 'Medio', 5],
+  ['Joaquín Espinoza', '+5692-0010', '4ª', 0, 2, 'Medio', 9],
+  ['Andrés Carrasco', '+5692-0011', '4ª', 0, 4, 'Medio', 6],
+  ['Francisca Jara', '+5692-0012', '4ª', 0, 1, 'Medio', 10],
+  ['Catalina Ríos', '+5692-0013', '4ª', 0, 3, 'Medio', 8],
+  // 5ª (16)
+  ['Pablo Muñoz', '+5692-0014', '5ª', 0, 5, 'Medio', 4],
+  ['Diego Salinas', '+5692-0015', '5ª', 0, 2, 'Medio', 5],
+  ['Felipe Cáceres', '+5692-0016', '5ª', 0, 7, 'Medio', 3],
+  ['Nicolás Vega', '+5692-0017', '5ª', 0, 3, 'Medio', 5],
+  ['Gonzalo Fuentes', '+5692-0018', '5ª', 0, 1, 'Medio', 6],
+  ['Cristian Lagos', '+5692-0019', '5ª', 0, 4, 'Medio', 4],
+  ['Fernando Bustos', '+5692-0020', '5ª', 0, 6, 'Medio', 3],
+  ['Rodrigo Pino', '+5692-0021', '5ª', 0, 2, 'Medio', 5],
+  ['Mauricio Valdés', '+5692-0022', '5ª', 0, 8, 'Medio', 2],
+  ['Patricio Gálvez', '+5692-0023', '5ª', 0, 3, 'Medio', 4],
+  ['Sergio Riquelme', '+5692-0024', '5ª', 0, 5, 'Medio', 3],
+  ['Marcelo Vidal', '+5692-0025', '5ª', 0, 2, 'Medio', 5],
+  ['Alexis Palma', '+5692-0026', '5ª', 0, 7, 'Medio', 2],
+  ['Cristóbal Barrios', '+5692-0027', '5ª', 0, 4, 'Medio', 4],
+  ['Daniel Araya', '+5692-0028', '5ª', 0, 1, 'Medio', 6],
+  ['Eduardo Zamora', '+5692-0029', '5ª', 0, 6, 'Medio', 3],
+  // 6ª (9)
+  ['Lucas Medina', '+5692-0030', '6ª', 1, 9, 'Nuevo', 0],
+  ['Emilio Sepúlveda', '+5692-0031', '6ª', 1, 11, 'Nuevo', 0],
+  ['Valentina Salazar', '+5692-0032', '6ª', 1, 7, 'Nuevo', 1],
+  ['Antonia Bravo', '+5692-0033', '6ª', 1, 12, 'Nuevo', 0],
+  ['Joaquina Silva', '+5692-0034', '6ª', 1, 8, 'Nuevo', 0],
+  ['Renato Cabrera', '+5692-0035', '6ª', 1, 10, 'Nuevo', 1],
+  ['Sofía Vergara', '+5692-0036', '6ª', 1, 9, 'Nuevo', 0],
+  ['Isidora Parra', '+5692-0037', '6ª', 1, 13, 'Nuevo', 0],
+  ['Gaspar Toledo', '+5692-0038', '6ª', 1, 11, 'Nuevo', 1],
+]
+for (const [name, phone, categoria, es_nuevo, dias, nivel, ganados] of demoExtra) {
+  db.prepare(`INSERT OR IGNORE INTO players (id, club_id, name, phone, categoria, es_nuevo, dias_sin_jugar, nivel, ganados) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+    .run(randomUUID(), demoId, name, phone, categoria, es_nuevo, dias, nivel, ganados)
+}
+
+console.log('✅ Seed: club piloto (2 canchas, 12 jug) + club DEMO Los Guerreros (4 canchas, 50 jugadores realistas).')
 
