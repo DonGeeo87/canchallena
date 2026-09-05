@@ -218,6 +218,84 @@ app.get(`${API_PREFIX}/players`, requireAuth, (req, res) => {
   res.json({ players: rows })
 })
 
+// ---------- Actualizar la FICHA de un socio (onboarding / coach) ----------
+// El agente la usa para grabar lo que captura al socio durante el onboarding o
+// para completar preferencias cuando las confirma. Solo actualiza campos enviados.
+app.patch(`${API_PREFIX}/players/ficha`, requireAuth, (req, res) => {
+  const { clubId } = (req as any).authUser as AuthUser
+  const { phone, ...campos } = req.body
+  if (!phone) return res.status(400).json({ error: 'phone requerido' })
+
+  // Resolver jugador por teléfono en este club
+  const digits = String(phone).replace(/[^0-9]/g, '')
+  const player = db.prepare(`SELECT id FROM players WHERE club_id=? AND REPLACE(REPLACE(REPLACE(phone,'+',''),' ',''),'-','') LIKE ?`).get(clubId, `%${digits.slice(-9)}%`) as any
+  if (!player) return res.status(404).json({ error: 'Socio no encontrado en este club' })
+
+  // Campos permitidos de la ficha
+  const permitidos = ['name','categoria','es_nuevo','dias_sin_jugar','categoria_deseada','modalidad','horario_preferido','dias_preferidos','experiencia','objetivo']
+  const sets: string[] = []
+  const vals: any[] = []
+  for (const k of permitidos) {
+    if (campos[k] !== undefined) {
+      sets.push(`${k} = ?`)
+      vals.push(campos[k])
+    }
+  }
+  // Marcar ficha completa si ya se capturaron los datos clave
+  if (campos.ficha_completa !== undefined) {
+    if (campos.ficha_completa === true || campos.ficha_completa === 'true' || campos.ficha_completa === 1) {
+      sets.push('ficha_completa = 1')
+    }
+  } else if (
+    campos.name && campos.categoria_deseada && campos.modalidad &&
+    campos.horario_preferido && campos.objetivo
+  ) {
+    sets.push('ficha_completa = 1')
+  }
+  if (!sets.length) return res.status(400).json({ error: 'Ningún campo de ficha para actualizar' })
+
+  sets.push(`updated_at = datetime('now')`)
+  vals.push(player.id)
+  db.prepare(`UPDATE players SET ${sets.join(', ')} WHERE id = ?`).run(...vals)
+
+  // Recuperar la ficha actualizada
+  const ficha = db.prepare(`SELECT id, name, phone, categoria, es_nuevo, dias_sin_jugar, categoria_deseada, modalidad, horario_preferido, dias_preferidos, experiencia, objetivo, ficha_completa FROM players WHERE id = ?`).get(player.id)
+  logBotEvent(phone, 'ficha_actualizada', { club_id: clubId, player_id: player.id, campos: Object.keys(campos) })
+  res.json({ ok: true, ficha })
+})
+
+// ---------- Registrar un socio NUEVO (onboarding por el agente) ----------
+// Cuando un numero desconocido escribe, el agente captura nombre+nivel y lo crea.
+app.post(`${API_PREFIX}/players/registrar`, requireAuth, (req, res) => {
+  const { clubId } = (req as any).authUser as AuthUser
+  const { name, phone, categoria, categoria_deseada, modalidad, horario_preferido, dias_preferidos, experiencia, objetivo } = req.body
+  if (!name || !phone) return res.status(400).json({ error: 'name y phone requeridos' })
+
+  // Evitar duplicado por teléfono en el club
+  const digits = String(phone).replace(/[^0-9]/g, '')
+  const existe = db.prepare(`SELECT id, name FROM players WHERE club_id=? AND REPLACE(REPLACE(REPLACE(phone,'+',''),' ',''),'-','') LIKE ?`).get(clubId, `%${digits.slice(-9)}%`) as any
+  if (existe) {
+    return res.status(200).json({ ok: true, ya_existia: true, jugador: existe })
+  }
+
+  const id = randomUUID()
+  const fichaCompleta = (categoria_deseada && modalidad && objetivo) ? 1 : 0
+  db.prepare(`INSERT INTO players (id, club_id, name, phone, categoria, es_nuevo, nivel, categoria_deseada, modalidad, horario_preferido, dias_preferidos, experiencia, objetivo, ficha_completa) VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?)`)
+    .run(id, clubId, name, phone,
+      categoria || '6ª',
+      experiencia === 'nuevo' ? 'Nuevo' : (experiencia === 'avanzado' ? 'Avanzado' : 'Medio'),
+      categoria_deseada || categoria || '6ª',
+      modalidad || 'cualquiera',
+      horario_preferido || null,
+      dias_preferidos || null,
+      experiencia || 'nuevo',
+      objetivo || 'divertirme',
+      fichaCompleta)
+
+  logBotEvent(phone, 'socio_registrado', { club_id: clubId, player_id: id, name })
+  res.status(201).json({ ok: true, jugador: { id, name: name, phone } })
+})
+
 // ---------- Matchmaking: listar partidos abiertos ----------
 app.get(`${API_PREFIX}/matchmaking`, requireAuth, (req, res) => {
   const { clubId } = (req as any).authUser as AuthUser
