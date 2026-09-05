@@ -636,6 +636,79 @@ app.get(`${API_PREFIX}/agent/activity`, requireAuth, (req, res) => {
   })
 })
 
+// ---------- AUTO-LLENADO / PROACTIVIDAD DEL AGENTE ----------
+// El agente monitorea los partidos abiertos: si falta 1 jugador (3/4 -> 2/4)
+// y el partido está cerca de la hora, busca un socio disponible del nivel del
+// grupo. Si no hay de ese nivel, amplia a otros niveles. Objetivo: llenar las
+// canchas del club. Lo dispara el cron de Hermes (~cada 5 min).
+app.post(`${API_PREFIX}/proactivo/fill`, async (req, res) => {
+  const clubId = (req.body?.club_id) || 'club-piloto'
+  const ahora = Date.now()
+  const VENTANA_MS = 60 * 60 * 1000 // 1 hora antes del partido
+
+  // Partidos abiertos buscando jugadores (status=buscando)
+  const abiertos = db.prepare(`
+    SELECT om.id, om.slot_id, s.starts_at, c.name AS court_name, c.club_id
+    FROM open_matches om
+    JOIN slots s ON s.id = om.slot_id
+    JOIN courts c ON c.id = s.court_id
+    WHERE c.club_id = ? AND om.status = 'buscando'
+  `).all(clubId) as any[]
+
+  const resultados: any[] = []
+
+  for (const m of abiertos) {
+    const horaPartido = new Date(m.starts_at).getTime()
+    const falta = horaPartido - ahora
+    // Solo si el partido está dentro de la ventana (y no pasó)
+    if (falta < 0 || falta > VENTANA_MS) continue
+
+    // Jugadores ya confirmados (aceptadas)
+    const confirmados = db.prepare(`
+      SELECT mi.player_id, p.name, p.categoria, p.es_nuevo, p.phone, p.dias_sin_jugar
+      FROM match_invitations mi JOIN players p ON p.id = mi.player_id
+      WHERE mi.open_match_id = ? AND mi.status = 'aceptada'
+    `).all(m.id) as any[]
+    const cupos = 4 - confirmados.length
+
+    if (cupos <= 0) continue // ya está lleno
+
+    // Nivel objetivo = nivel del grupo confirmado (media de categorías)
+    const catRank: Record<string, number> = { '3ª':3, '4ª':4, '5ª':5, '6ª':6 }
+    const niveles = confirmados.map(c => catRank[String(c.categoria)] ?? 5)
+    const nivelObj = niveles.length ? Math.round(niveles.reduce((a,b)=>a+b,0)/niveles.length) : 5
+
+    const enPartido = confirmados.map(c => c.player_id)
+
+    // 1) Buscar socio libre del nivel objetivo (mejor match score)
+    let candidato = buscarReemplazo(clubId, { categoria: Object.keys(catRank).find(k=>catRank[k]===nivelObj)||'5ª' } as any, enPartido)
+
+    if (candidato) {
+      // Enviar invitación proactiva
+      const fecha = new Date(m.starts_at).toLocaleDateString('es-CL',{weekday:'long',day:'numeric',month:'long'})
+      const hora = new Date(m.starts_at).toLocaleTimeString('es-CL',{hour:'2-digit',minute:'2-digit'})
+      const mensaje = buildReplacementMessage(candidato.name, 'pareja disponible', 'nivel compatible', fecha, hora)
+      const sent = await sendWhatsApp(candidato.phone, mensaje)
+      db.prepare(`INSERT INTO match_invitations (id, open_match_id, player_id, status) VALUES (?, ?, ?, 'pendiente')`).run(randomUUID(), m.id, candidato.id)
+      resultados.push({ partido: m.id, cancha: m.court_name, faltaba: cupos, invitado: candidato.name, nivel: candidato.categoria, whatsapp: sent.ok ? 'enviado' : `fallo:${sent.error}` })
+    } else {
+      // 2) No hay del nivel objetivo -> ampliar a todos los niveles disponibles
+      const todos = db.prepare(`SELECT id, name, phone, categoria, es_nuevo FROM players WHERE club_id=? AND id NOT IN (${enPartido.length ? enPartido.map(()=>'?').join(',') : "'__'"})`).all(clubId, ...(enPartido.length?enPartido:[])) as any[]
+      const candidatoFallo = todos.length ? { id: todos[0].id, name: todos[0].name, phone: todos[0].phone, categoria: todos[0].categoria } : null
+      if (candidatoFallo) {
+        const fecha = new Date(m.starts_at).toLocaleDateString('es-CL',{weekday:'long',day:'numeric',month:'long'})
+        const hora = new Date(m.starts_at).toLocaleTimeString('es-CL',{hour:'2-digit',minute:'2-digit'})
+        const mensaje = buildReplacementMessage(candidatoFallo.name, 'pareja disponible', 'nivel compatible', fecha, hora)
+        const sent = await sendWhatsApp(candidatoFallo.phone, mensaje)
+        db.prepare(`INSERT INTO match_invitations (id, open_match_id, player_id, status) VALUES (?, ?, ?, 'pendiente')`).run(randomUUID(), m.id, candidatoFallo.id)
+        resultados.push({ partido: m.id, cancha: m.court_name, faltaba: cupos, invitado: candidatoFallo.name, nivel: candidatoFallo.categoria, whatsapp: sent.ok ? 'enviado' : `fallo:${sent.error}`, escalado: true })
+      }
+    }
+  }
+
+  res.json({ ok: true, monitoreados: abiertos.length, accionados: resultados })
+})
+
 // ---------- AutoFill FASE A: detectar oportunidades (canchas libres con jugadores suficientes) ----------
 // El admin ve las oportunidades y aprueba. NO crea partidos solo aún (FASE B lo hará).
 app.get(`${API_PREFIX}/autofill/oportunidades`, requireAuth, (req, res) => {
