@@ -31,7 +31,7 @@ export const PricingSection: React.FC<PricingSectionProps> = ({ onNavigate }) =>
     {
       id: 'pro',
       name: 'PRO',
-      tagline: 'Para clubes grandes y cadenas',
+      tagline: 'Para clubes grandes, cadenas y quienes quieren su propia marca',
       price: '$69.990',
       period: '/ mes',
       popular: false,
@@ -39,12 +39,17 @@ export const PricingSection: React.FC<PricingSectionProps> = ({ onNavigate }) =>
       features: [
         'Canchas ilimitadas y múltiples sedes',
         'Todo lo del Plan Club',
+        'Número de WhatsApp propio (chip dedicado a pedido)',
+        'Setup de chip dedicado + activación asistida',
         'Recordatorios automáticos de partidos',
         'Resumen y métricas del club en el panel',
         'Llenado de horas valle prioritario (multi-nivel)',
+        'Coach de jugadores con planes de progreso avanzados',
+        'Reportes de retención y actividad de socios',
         'Soporte prioritario por WhatsApp',
+        'Onboarding acompañado por nuestro equipo',
       ],
-      ctaText: 'Contactar para Plan Pro',
+      ctaText: 'Cotizar Plan Pro',
     },
   ];
 
@@ -155,6 +160,14 @@ export const PricingSection: React.FC<PricingSectionProps> = ({ onNavigate }) =>
             <span>Reclamar 50% OFF</span>
             <ArrowRight className="w-4 h-4" />
           </button>
+        </div>
+
+        {/* Chip dedicado note — a pedido, setup + mensualidad */}
+        <div className="mt-8 max-w-4xl mx-auto bg-[#FFFFFF] border border-[#7C3AED]/30 rounded-2xl p-5 text-sm text-[#62626A]">
+          <p className="font-bold text-[#7C3AED] mb-1">Número de WhatsApp propio (chip dedicado) — a pedido</p>
+          <p className="text-xs leading-relaxed">
+            Si el club prefiere su propia línea WhatsApp con su marca e imagen, sin compartir número con otros clubes, lo cotizamos aparte: <strong className="text-[#101014]">setup de activación</strong> (entrega del chip, pareo y configuración del asistente) + una <strong className="text-[#101014]">mensualidad adicional</strong> por el mantenimiento del número dedicado. Disponible solo en el plan Pro. Contáctenos para su cotización.
+          </p>
         </div>
 
         {/* Reassurance Banner */}

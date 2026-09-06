@@ -48,8 +48,8 @@ export const HeroCourt: React.FC<HeroCourtProps> = ({ onNavigate }) => {
 
             {/* Main Headline */}
             <h1 className="text-4xl sm:text-5xl lg:text-6xl font-extrabold text-[#101014] tracking-tight leading-[1.08]">
-              SU CANCHA DISPONIBLE <br />
-              <span className="text-[#7C3AED]">NO VUELVE A QUEDARSE</span> <br />
+              TU CANCHA DISPONIBLE <br />
+              <span className="text-[#7C3AED]">NO VOLVERÁ A QUEDAR</span> <br />
               <span className="relative inline-block">
                 VACÍA.
                 <svg className="absolute -bottom-2 left-0 w-full h-3 text-[#C7F000]" viewBox="0 0 100 20" preserveAspectRatio="none">
@@ -60,7 +60,7 @@ export const HeroCourt: React.FC<HeroCourtProps> = ({ onNavigate }) => {
 
             {/* Subheadline */}
             <p className="text-lg text-[#62626A] max-w-xl mx-auto lg:mx-0 font-normal leading-relaxed">
-              CanchaLlena automatiza las reservas y encuentra jugadores compatibles para llenar sus partidos y horarios valle, <strong className="text-[#101014] font-semibold">directamente desde WhatsApp</strong>.
+              CanchaLlena automatiza sus reservas y <strong className="text-[#101014] font-semibold">llena sus partidos y horarios valle con jugadores compatibles</strong>, directamente desde WhatsApp.
             </p>
 
             {/* CTAs */}
