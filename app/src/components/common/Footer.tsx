@@ -103,6 +103,14 @@ export const Footer: React.FC<FooterProps> = ({ onNavigate }) => {
                   Soporte WhatsApp Clubes
                 </a>
               </li>
+              <li className="pt-2">
+                <h4 className="text-xs font-bold uppercase tracking-wider text-[#101014] mb-2">Legal</h4>
+                <ul className="space-y-2.5 text-sm">
+                  <li><button onClick={() => onNavigate?.('/privacidad')} className="hover:text-[#7C3AED] transition-colors text-left">Política de Privacidad</button></li>
+                  <li><button onClick={() => onNavigate?.('/terminos')} className="hover:text-[#7C3AED] transition-colors text-left">Términos de Uso</button></li>
+                  <li><button onClick={() => onNavigate?.('/datos')} className="hover:text-[#7C3AED] transition-colors text-left">Protección de Datos</button></li>
+                </ul>
+              </li>
               <li>
                 <span className="text-xs text-[#62626A] block pt-2">
                   Santiago, Chile · Vitacura / Las Condes / Lo Barnechea / Chicureo

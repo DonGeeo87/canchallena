@@ -20,6 +20,7 @@ import { ClubMicrosite } from './components/public/ClubMicrosite';
 import Demo from './components/demo/Demo';
 import { api } from './services/api';
 import { User } from './types';
+import { PaginaLegal, LegalPage } from './components/legal/PaginaLegal';
 
 export const API_BASE_URL = '/api'; // hardcodeado para MSYS2
 
@@ -60,6 +61,7 @@ export default function App() {
     }
     if (route.startsWith('/club/')) { setCurrentRoute('club_microsite'); return; }
     if (route === '/demo' || route === 'demo') { setCurrentRoute('demo'); return; }
+    if (route === '/privacidad' || route === '/terminos' || route === '/datos') { setCurrentRoute(route); return; }
     if (route === '/' || route === 'landing') { setCurrentRoute('landing'); return; }
     setCurrentRoute(route);
   };
@@ -86,6 +88,10 @@ export default function App() {
 
   if (currentRoute === 'demo') {
     return <Demo onNavigateHome={() => setCurrentRoute('landing')} />;
+  }
+
+  if (currentRoute === '/privacidad' || currentRoute === '/terminos' || currentRoute === '/datos') {
+    return <PaginaLegal page={(currentRoute.slice(1)) as LegalPage} onNavigate={handleNavigate} />;
   }
 
   return (
