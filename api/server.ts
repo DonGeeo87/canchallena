@@ -11,6 +11,7 @@ import { getSession, setSession, deleteSession, isDuplicateMessage, markMessageP
 import * as demo from './_lib/demo_engine.js'
 import { getPlayerStreak, getPartnerStruggle, recommendPartnerChange, getPlayerProgress, findPlayersByLevel, registerMatchResult, crearPlanProgreso } from './_lib/coach.js'
 import { ensureClubSlots, getClubAvailability, getClubAvailabilityMultiDay } from './_lib/slots_gen.js'
+import { iniciarDupla, responderDupla, timeoutDuplas, estadoDupla } from './_lib/pairs.js'
 
 const app = express()
 app.use(helmet())
@@ -294,6 +295,37 @@ app.post(`${API_PREFIX}/players/registrar`, requireAuth, (req, res) => {
 
   logBotEvent(phone, 'socio_registrado', { club_id: clubId, player_id: id, name })
   res.status(201).json({ ok: true, jugador: { id, name: name, phone } })
+})
+
+// ---------- GESTIÓN DE DUPLAS / PAREJAS (pipeline determinista) ----------
+// El socio pide un compañero -> el backend invita AL CANDIDATO por WhatsApp ->
+// espera SI/NO (10 min) -> escala si no hay respuesta -> avisa al solicitante
+// solo cuando la pareja confirma. El LLM solo dispara y consulta.
+
+// Iniciar la búsqueda de una pareja para un solicitante
+app.post(`${API_PREFIX}/pairs/iniciar`, requireAuth, (req, res) => {
+  const { clubId } = (req as any).authUser as AuthUser
+  const { requester_id, nivel } = req.body || {}
+  if (!requester_id) return res.status(400).json({ error: 'requester_id requerido' })
+  const result = iniciarDupla(requester_id, clubId, nivel ? { nivel } : undefined)
+  if (!result.ok) return res.status(400).json(result)
+  res.json({ ok: true, mensaje: 'Estamos buscando un compañero para ti, te avisamos apenas confirme.', parejaSolicitada: result.parejaSolicitada })
+})
+
+// Consultar el estado actual de la solicitud de dupla de un socio
+app.get(`${API_PREFIX}/pairs/estado`, requireAuth, (req, res) => {
+  const { clubId } = (req as any).authUser as AuthUser
+  const requesterId = String(req.query.requester_id || '')
+  if (!requesterId) return res.status(400).json({ error: 'requester_id requerido' })
+  const estado = estadoDupla(requesterId, clubId)
+  if (!estado) return res.status(404).json({ error: 'No hay solicitud de pareja activa' })
+  res.json(estado)
+})
+
+// Timeout manual (lo invoca el cron): pasa a otro candidato las solicitudes vencidas
+app.post(`${API_PREFIX}/pairs/timeout`, requireAuth, (req, res) => {
+  const n = timeoutDuplas()
+  res.json({ ok: true, escaladas: n })
 })
 
 // ---------- Matchmaking: listar partidos abiertos ----------
@@ -940,6 +972,27 @@ app.post(`${API_PREFIX}/webhook/gowa`, async (req, res) => {
     await sendWhatsApp(jid, `🎾 ¡Hola, ${player.name}! Quiero conocerte mejor para armarte un plan de progreso.\n\n` + FICHA_PASOS[0][1](player.name))
     markMessageProcessed(messageId, fromDigits, 'ficha_inicio')
     return
+  }
+
+  // ── FLUJO DÚPLA: ¿El jugador es CANDIDATO de una pareja en espera? Entonces su SI/NO confirma/escala.
+  const parInv = db.prepare(`
+    SELECT pr.id FROM pair_requests pr
+    WHERE pr.candidate_id = ? AND pr.club_id = ? AND pr.status IN ('esperando','escalando')
+    ORDER BY pr.created_at DESC LIMIT 1
+  `).get(player.id, player.club_id) as any
+
+  if (parInv) {
+    const isSi = text === 'S' || text.includes('SI') || text === 'SÍ' || text === 'YES'
+    const isNo = text === 'N' || text.includes('NO')
+    if (isSi || isNo) {
+      await responderDupla(player.id, player.club_id, isSi ? 'si' : 'no')
+      const confirmMsg = isSi
+        ? `¡Perfecto! Confirmaste tu participación 🎾 Te esperamos en la cancha.`
+        : `Sin problema 🙌 Gracias por avisar.`
+      await sendWhatsApp(jid, confirmMsg)
+      markMessageProcessed(messageId, fromDigits, isSi ? 'dupla_si' : 'dupla_no')
+      return
+    }
   }
 
   // ── FLUJO 1: ¿Hay una invitación pendiente para este jugador? Entonces SI/NO.

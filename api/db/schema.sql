@@ -123,6 +123,21 @@ CREATE TABLE IF NOT EXISTS match_invitations (
   created_at    TEXT DEFAULT (datetime('now'))
 );
 
+-- Formación de duplas / parejas (el socio pide un compañero)
+-- Pipeline determinista: el solicitante pide -> se invita a candidato por WA ->
+-- se espera SI/NO -> si confirma avisa al solicitante; si rechaza/escala busca otro.
+CREATE TABLE IF NOT EXISTS pair_requests (
+  id              TEXT PRIMARY KEY,
+  club_id         TEXT NOT NULL REFERENCES clubs(id) ON DELETE CASCADE,
+  requester_id    TEXT NOT NULL REFERENCES players(id) ON DELETE CASCADE,
+  candidate_id    TEXT REFERENCES players(id) ON DELETE SET NULL,
+  open_match_id   TEXT REFERENCES open_matches(id) ON DELETE SET NULL,
+  status          TEXT DEFAULT 'esperando', -- esperando | escalando | confirmado | rechazado | cancelado
+  attempts        INTEGER DEFAULT 0,         -- candidatos distintos intentados
+  confirmed_at    TEXT,
+  created_at      TEXT DEFAULT (datetime('now'))
+);
+
 CREATE INDEX IF NOT EXISTS idx_slots_court_time       ON slots (court_id, starts_at);
 CREATE INDEX IF NOT EXISTS idx_reservations_status    ON reservations (status);
 CREATE INDEX IF NOT EXISTS idx_messages_player_club   ON players (club_id, phone);
