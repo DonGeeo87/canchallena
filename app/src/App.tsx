@@ -21,6 +21,7 @@ import Demo from './components/demo/Demo';
 import { api } from './services/api';
 import { User } from './types';
 import { PaginaLegal, LegalPage } from './components/legal/PaginaLegal';
+import ContractoModal from './components/auth/ContractoModal';
 
 export const API_BASE_URL = '/api'; // hardcodeado para MSYS2
 
@@ -35,6 +36,7 @@ export default function App() {
   );
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [contratoProximo, setContratoProximo] = useState<{ plan: string; nombre: string } | null>(null);
 
   useEffect(() => {
     const checkSession = async () => {
@@ -78,6 +80,24 @@ export default function App() {
     setCurrentRoute('landing');
   };
 
+  // Compra de plan: crea preferencia de MercadoPago y guarda el plan por contratar.
+  // El webhook de MP activa el club al confirmarse el pago (backend).
+  const handleComprar = async (plan: string, nombre: string) => {
+    setContratoProximo({ plan, nombre });
+    try {
+      // Lanzar checkout (flujo de pago). El contrato (modal) se muestra al volver de MP con status=success.
+      const data = await api.pagos.crearCheckout(plan, nombre);
+      if (data.init_point) {
+        window.location.href = data.init_point;
+      } else {
+        // Si MP no está configurado, igual mostramos el contrato como flujo de prueba.
+        alert(data.error || 'Redirigiendo a pago...');
+      }
+    } catch (e: any) {
+      alert('Error al iniciar el pago: ' + (e?.message || 'intente de nuevo'));
+    }
+  };
+
   if (currentRoute === 'dashboard' && currentUser) {
     return <AdminDashboard currentUser={currentUser} onLogout={handleLogout} onNavigateHome={() => setCurrentRoute('landing')} />;
   }
@@ -108,12 +128,20 @@ export default function App() {
         <FuncionalidadesSection />
         <NoAppSection />
         <ValueCalculator onNavigate={handleNavigate} />
-        <PricingSection onNavigate={handleNavigate} />
+        <PricingSection onNavigate={handleNavigate} onComprar={handleComprar} />
         <FAQSection />
         <FinalCTA onNavigate={handleNavigate} />
       </main>
       <Footer onNavigate={handleNavigate} />
       <AuthModal isOpen={isAuthModalOpen} onClose={() => setIsAuthModalOpen(false)} onSuccess={handleAuthSuccess} />
+      {contratoProximo && (
+        <ContractoModal
+          plan={contratoProximo.plan}
+          club_name={contratoProximo.nombre}
+          onAceptar={() => { alert('Club activado. Complete la configuración de canchas y socios en su panel.'); setContratoProximo(null); return setCurrentRoute('dashboard'); }}
+          onCancelar={() => setContratoProximo(null)}
+        />
+      )}
     </div>
   );
 }

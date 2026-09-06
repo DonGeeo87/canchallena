@@ -443,6 +443,19 @@ app.post(`${API_PREFIX}/webhook/mercadopago`, async (req, res) => {
     const pago = await getPago(String(data.id))
     if (pago?.status === 'approved') {
       const extRef = String(pago.external_reference || pago.metadata?.plan || '')
+      const plan = String(pago.metadata?.plan || 'pro')
+      const clubName = String(pago.metadata?.club_name || '')
+      // Activar el club: marcar plan aprobado + vencimiento (+1 mes). Buscar por club_name si viene.
+      let clubId: string | null = null
+      if (clubName) {
+        const clubRow = db.prepare(`SELECT id FROM clubs WHERE name = ?`).get(clubName) as any
+        if (clubRow) clubId = clubRow.id
+      }
+      if (clubId) {
+        const vto = new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10)
+        db.prepare(`UPDATE clubs SET plan = ?, plan_activo = 1, plan_vto = ? WHERE id = ?`).run(plan, vto, clubId)
+        logBotEvent('pago', 'plan_aprobado_club', { ref: extRef, plan, club_id: clubId, vto })
+      }
       logBotEvent('pago', 'plan_aprobado', { ref: extRef, monto: pago.transaction_amount, metadata: pago.metadata })
     }
   } catch (e) { console.error('MP webhook verify:', e) }

@@ -3,9 +3,10 @@ import { Check, Sparkles, ArrowRight, ShieldCheck } from 'lucide-react';
 
 interface PricingSectionProps {
   onNavigate?: (route: string) => void;
+  onComprar?: (plan: string, nombre: string) => void;
 }
 
-export const PricingSection: React.FC<PricingSectionProps> = ({ onNavigate }) => {
+export const PricingSection: React.FC<PricingSectionProps> = ({ onNavigate, onComprar }) => {
   const plans = [
     {
       id: 'club',
@@ -127,7 +128,7 @@ export const PricingSection: React.FC<PricingSectionProps> = ({ onNavigate }) =>
               {/* Bottom CTA & Note */}
               <div className="pt-8 mt-6 border-t border-[#D9D9D2]/60 space-y-3">
                 <button
-                  onClick={() => onNavigate?.('/login')}
+                  onClick={() => onComprar?.(plan.id, plan.name)}
                   className={`w-full py-3.5 px-4 rounded-xl font-bold text-sm transition-all duration-200 active:scale-[0.98] cursor-pointer flex items-center justify-center gap-2 ${
                     plan.popular
                       ? 'bg-[#7C3AED] hover:bg-[#6D28D9] text-white shadow-md'

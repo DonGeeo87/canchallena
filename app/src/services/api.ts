@@ -356,4 +356,14 @@ export const api = {
       } as any;
     },
   },
+
+  pagos: {
+    async crearCheckout(plan: string, club_name?: string): Promise<{ init_point?: string; error?: string }> {
+      const data = await request<{ init_point?: string; error?: string }>('/checkout', {
+        method: 'POST',
+        body: JSON.stringify({ plan, club_name }),
+      }, false);
+      return data;
+    },
+  },
 };

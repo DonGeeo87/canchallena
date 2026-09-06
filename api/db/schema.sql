@@ -11,6 +11,8 @@ CREATE TABLE IF NOT EXISTS clubs (
   city       TEXT,
   currency   TEXT DEFAULT 'CLP',
   plan       TEXT DEFAULT 'Starter',      -- Starter | Club | Pro
+  plan_activo INTEGER DEFAULT 0,          -- 1 = pago aprobado y servicio activo
+  plan_vto    TEXT,                        -- fecha de vencimiento del plan
   whatsapp   TEXT DEFAULT '',             -- número WhatsApp del bot del club
   created_at TEXT DEFAULT (datetime('now'))
 );
