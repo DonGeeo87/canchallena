@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { PadelBall } from '../common/PadelBall';
 import AgentActivity from './AgentActivity';
+import ImportSocios from './ImportSocios';
 import { api } from '../../services/api';
 import { User, Court, Player, OpenMatch } from '../../types';
 
@@ -639,6 +640,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         {/* TAB 4: PLAYERS COMMUNITY (Section 29) */}
         {activeTab === 'players' && (
           <div className="bg-white rounded-3xl p-6 sm:p-8 border border-[#D9D9D2] shadow-sm space-y-6">
+            <ImportSocios onImported={loadData} />
             <div className="flex flex-wrap items-center justify-between gap-4 border-b border-[#D9D9D2] pb-4">
               <div>
                 <h3 className="text-xl font-extrabold text-[#101014]">Base de Jugadores del Club ({players.length})</h3>

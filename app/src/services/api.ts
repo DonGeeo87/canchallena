@@ -230,6 +230,12 @@ export const api = {
       const data = await request<{ players: ApiPlayerRaw[] }>('/players');
       return data.players.map(mapPlayer);
     },
+    async import(socios: { name: string; phone: string; categoria?: string; es_nuevo?: boolean }[]): Promise<{ creados: number; actualizados: number; errores: number; detalleErrores?: string[] }> {
+      const data = await request<{ creados: number; actualizados: number; errores: number; detalleErrores?: string[] }>('/players/import', {
+        method: 'POST', body: JSON.stringify({ socios }),
+      });
+      return data;
+    },
   },
 
   matchmaking: {
