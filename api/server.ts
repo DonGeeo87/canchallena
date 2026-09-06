@@ -95,6 +95,42 @@ app.post(`${API_PREFIX}/courts`, requireAuth, (req, res) => {
   res.status(201).json({ id, name, price_per_slot })
 })
 
+// Editar cancha (nombre/precio/estado activo)
+app.patch(`${API_PREFIX}/courts/:id`, requireAuth, (req, res) => {
+  const { clubId } = (req as any).authUser as AuthUser
+  const courtId = String(req.params.id)
+  const court = db.prepare(`SELECT id FROM courts WHERE id = ? AND club_id = ?`).get(courtId, clubId)
+  if (!court) return res.status(404).json({ error: 'Cancha no encontrada' })
+  const sets: string[] = []
+  const vals: any[] = []
+  if (req.body.name !== undefined) { sets.push('name = ?'); vals.push(req.body.name) }
+  if (req.body.price_per_slot !== undefined) { sets.push('price_per_slot = ?'); vals.push(req.body.price_per_slot) }
+  if (req.body.active !== undefined) { sets.push('active = ?'); vals.push(req.body.active ? 1 : 0) }
+  if (!sets.length) return res.status(400).json({ error: 'Ningún campo para actualizar' })
+  vals.push(courtId)
+  db.prepare(`UPDATE courts SET ${sets.join(', ')} WHERE id = ?`).run(...vals)
+  res.json({ ok: true, id: courtId })
+})
+
+// ---------- Horarios globales del club por día (genera slots) ----------
+// El dueño define qué días abre y sus horarios. Reemplaza los horarios previos.
+app.put(`${API_PREFIX}/club/hours`, requireAuth, (req, res) => {
+  const { clubId } = (req as any).authUser as AuthUser
+  const { hours } = req.body || {}
+  // hours: [{ day_of_week: 0..6, open_time: '09:00', close_time: '23:00' }]
+  if (!Array.isArray(hours)) return res.status(400).json({ error: 'Enviar array hours de {day_of_week, open_time, close_time}' })
+  // Reemplazar horarios del club (borrar y re-insertar)
+  db.prepare(`DELETE FROM club_hours WHERE club_id = ?`).run(clubId)
+  const ins = db.prepare(`INSERT INTO club_hours (club_id, day_of_week, open_time, close_time) VALUES (?, ?, ?, ?)`)
+  for (const h of hours) {
+    const dow = Number(h.day_of_week)
+    if (dow < 0 || dow > 6 || !h.open_time || !h.close_time) continue
+    ins.run(clubId, dow, h.open_time, h.close_time)
+  }
+  const guardados = db.prepare(`SELECT COUNT(*) AS n FROM club_hours WHERE club_id = ?`).get(clubId) as any
+  res.json({ ok: true, guardados: guardados.n })
+})
+
 // ---------- Slots (por fecha) ----------
 app.get(`${API_PREFIX}/slots`, requireAuth, (req, res) => {
   const { clubId } = (req as any).authUser as AuthUser

@@ -186,6 +186,9 @@ export const api = {
         amenities: [],
       };
     },
+    async setHours(hours: { day_of_week: number; open_time: string; close_time: string }[]): Promise<void> {
+      await request('/club/hours', { method: 'PUT', body: JSON.stringify({ hours }) });
+    },
   },
 
   admin: {
@@ -222,6 +225,12 @@ export const api = {
         method: 'PATCH',
         body: JSON.stringify({ time: slotTime, status: statusMap[nextStatus] || nextStatus }),
       });
+    },
+    async create(name: string, price_per_slot: number): Promise<void> {
+      await request('/courts', { method: 'POST', body: JSON.stringify({ name, price_per_slot }) });
+    },
+    async update(courtId: string, payload: { name?: string; price_per_slot?: number; active?: boolean }): Promise<void> {
+      await request(`/courts/${courtId}`, { method: 'PATCH', body: JSON.stringify(payload) });
     },
   },
 

@@ -16,11 +16,28 @@ function endFor(t: string): string {
   return `${parseInt(t) + 2}:00`.padStart(5, '0')
 }
 
+// Genera horas de inicio a partir de los rangos del club_hours.
+// Si el club configuró horarios (open_time..close_time), genera slots con bloques
+// redondeados (ej. 09:00, 10:00, ...). Si no, usa DEFAULT_TIMES.
+function slotsForDay(clubId: string, day: string): string[] {
+  const dow = new Date(day + 'T12:00:00').getDay() // 0=domingo..6=sábado
+  const range = db.prepare(`SELECT open_time, close_time FROM club_hours WHERE club_id = ? AND day_of_week = ? LIMIT 1`).get(clubId, dow) as any
+  if (!range) return DEFAULT_TIMES
+  const [oh, om] = (range.open_time || '09:00').split(':').map(Number)
+  const [ch, cm] = (range.close_time || '23:00').split(':').map(Number)
+  const times: string[] = []
+  for (let h = oh; h < ch; h++) {
+    times.push(`${String(h).padStart(2, '0')}:${String(om || 0).padStart(2, '0')}`)
+  }
+  return times.length ? times : DEFAULT_TIMES
+}
+
 // Asegura slots libres para un club en una fecha (idempotente: no duplica).
 export function ensureClubSlots(clubId: string, day: string = new Date().toISOString().slice(0, 10)): void {
   const courts = db.prepare(`SELECT id, price_per_slot FROM courts WHERE club_id = ? AND active = 1`).all(clubId) as any[]
+  const times = slotsForDay(clubId, day)
   for (const c of courts) {
-    for (const t of DEFAULT_TIMES) {
+    for (const t of times) {
       const exists = db.prepare(`SELECT id FROM slots WHERE court_id = ? AND starts_at LIKE ?`).get(c.id, `${day}T${t}:00`) as any
       if (!exists) {
         db.prepare(`INSERT INTO slots (id, court_id, starts_at, ends_at, status, price) VALUES (?, ?, ?, ?, 'libre', ?)`)

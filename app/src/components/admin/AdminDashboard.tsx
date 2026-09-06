@@ -19,6 +19,7 @@ import {
 import { PadelBall } from '../common/PadelBall';
 import AgentActivity from './AgentActivity';
 import ImportSocios from './ImportSocios';
+import ConfigCanchas from './ConfigCanchas';
 import { api } from '../../services/api';
 import { User, Court, Player, OpenMatch } from '../../types';
 
@@ -725,6 +726,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         {activeTab === 'settings' && (
           <div className="bg-white rounded-3xl p-6 sm:p-8 border border-[#D9D9D2] shadow-sm max-w-4xl space-y-6">
             <h3 className="text-xl font-extrabold text-[#101014]">Configuración del Club & Canchas</h3>
+            <ConfigCanchas onChanged={loadData} />
             
             <div className="space-y-4">
               <div className="bg-[#F7F7F4] p-4 rounded-2xl border border-[#D9D9D2] space-y-2">
