@@ -146,6 +146,39 @@ app.post(`${API_PREFIX}/booking`, (req, res) => {
   })
 })
 
+// ---------- Cancelar reserva por teléfono ----------
+// El socio cancela su reserva: libera el slot y dispara la reposición de cupo
+// (proactivo) para que otro jugador pueda ocuparlo.
+app.post(`${API_PREFIX}/booking/cancelar`, requireAuth, (req, res) => {
+  const { clubId } = (req as any).authUser as AuthUser
+  const { phone } = req.body || {}
+  if (!phone) return res.status(400).json({ error: 'phone requerido' })
+
+  const digits = String(phone).replace(/[^0-9]/g, '')
+  const player = db.prepare(`SELECT id, name, club_id FROM players WHERE club_id=? AND REPLACE(REPLACE(REPLACE(phone,'+',''),' ',''),'-','') LIKE ?`).get(clubId, `%${digits.slice(-9)}%`) as any
+  if (!player) return res.status(404).json({ error: 'Socio no encontrado' })
+
+  // Buscar reserva activa del socio (pendiente o confirmada)
+  const reserva = db.prepare(`
+    SELECT r.id, r.slot_id, r.status, s.starts_at, c.name AS court_name
+    FROM reservations r JOIN slots s ON s.id = r.slot_id JOIN courts c ON c.id = s.court_id
+    WHERE r.player_id = ? AND r.club_id = ? AND r.status IN ('pendiente','confirmada')
+    ORDER BY r.created_at DESC LIMIT 1
+  `).get(player.id, clubId) as any
+  if (!reserva) return res.status(404).json({ error: 'No hay reserva activa para cancelar' })
+
+  // Cancelar reserva y liberar slot
+  db.prepare(`UPDATE reservations SET status = 'cancelada' WHERE id = ?`).run(reserva.id)
+  db.prepare(`UPDATE slots SET status = 'libre' WHERE id = ?`).run(reserva.slot_id)
+  logBotEvent(phone, 'reserva_cancelada', { club_id: clubId, player_id: player.id, slot_id: reserva.slot_id })
+
+  res.json({
+    ok: true,
+    cancelada: reserva.court_name + ' ' + (reserva.starts_at || '').slice(11, 16),
+    mensaje: 'Tu reserva fue cancelada. Liberamos el cupo para otro socio.',
+  })
+})
+
 // ---------- Matchmaking: crear partido con el motor de emparejamiento ----------
 app.post(`${API_PREFIX}/matchmaking/open`, requireAuth, async (req, res) => {
   const { slot_id } = req.body
@@ -406,6 +439,44 @@ app.get(`${API_PREFIX}/bookings`, requireAuth, (req, res) => {
     WHERE r.club_id = ? ORDER BY s.starts_at DESC
   `).all(clubId)
   res.json({ bookings: rows })
+})
+
+// ---------- Recordatorio de partido próximo ----------
+// Avisa a los jugadores confirmados de un partido abierto que están por jugar.
+// Lo dispara el cron (ej. 2h antes). Devuelve cuántos se recordaron.
+app.get(`${API_PREFIX}/recordatorio`, requireAuth, async (req, res) => {
+  const { clubId } = (req as any).authUser as AuthUser
+  const antesMin = Number(req.query.antes_min || 120)
+  const ahora = new Date()
+  const inicioVentana = new Date(ahora.getTime() + antesMin * 60000).toISOString()
+  const finVentana = new Date(ahora.getTime() + (antesMin + 60) * 60000).toISOString()
+
+  // Partidos abiertos (confirmados/buscando) que empiezan en la ventana
+  const partidos = db.prepare(`
+    SELECT om.id, om.status, s.starts_at, c.name AS court_name
+    FROM open_matches om
+    JOIN slots s ON s.id = om.slot_id
+    JOIN courts c ON c.id = s.court_id
+    WHERE c.club_id = ? AND s.starts_at > ? AND s.starts_at < ?
+  `).all(clubId, inicioVentana, finVentana) as any[]
+
+  let recordados = 0
+  const detalle: any[] = []
+  for (const p of partidos) {
+    const invitados = db.prepare(`
+      SELECT pj.name, pj.phone, mi.status
+      FROM match_invitations mi JOIN players pj ON pj.id = mi.player_id
+      WHERE mi.open_match_id = ? AND mi.status = 'aceptada'
+    `).all(p.id) as any[]
+    for (const iv of invitados) {
+      const hora = (p.starts_at || '').slice(11, 16)
+      const msg = `🎾 Recordatorio: tienes partido hoy a las ${hora} en ${p.court_name}. ¡Nos vemos!`
+      const sent = await sendWhatsApp(iv.phone, msg)
+      recordados++
+      detalle.push({ jugador: iv.name, whatsapp: sent.ok ? 'ok' : sent.error })
+    }
+  }
+  res.json({ ok: true, ventana_min: antesMin, partidos: partidos.length, recordados, detalle })
 })
 
 // ---------- Club público (micrositio) ----------
