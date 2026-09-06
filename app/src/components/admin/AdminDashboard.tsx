@@ -268,6 +268,16 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       {/* Dashboard Content Container */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
         
+        {/* Saludo por hora (como el mockup) */}
+        <div className="mb-6">
+          <p className="text-[10px] font-bold uppercase tracking-wider text-[#62626A]">
+            {currentUser.clubName || 'Su club'} · Hoy
+          </p>
+          <h2 className="text-xl sm:text-2xl font-extrabold text-[#101014]">
+            {(() => { const h = new Date().getHours(); return h < 12 ? 'Buenos días' : h < 19 ? 'Buenas tardes' : 'Buenas noches'; })()}, {currentUser.name}
+          </h2>
+        </div>
+        
         {/* TAB 1: OVERVIEW */}
         {activeTab === 'overview' && (
           <div className="space-y-8">
@@ -289,7 +299,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     Tiene 2 canchas libres a las 15:00. Hay 8 jugadores compatibles disponibles.
                   </h3>
                   <p className="text-xs text-[#62626A] mt-0.5">
-                    Podemos lanzar la convocatoria automática por WhatsApp a jugadores categoría 3.0 - 3.5 ahora mismo.
+                    Podemos lanzar la convocatoria automática por WhatsApp a jugadores categoría 3ª - 5ª ahora mismo.
                   </p>
                 </div>
               </div>
@@ -408,7 +418,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         <span className="text-[10px] text-[#62626A]">{court.surface} · {court.type}</span>
                       </div>
                       <span className="text-xs font-bold text-[#7C3AED] bg-white px-2.5 py-1 rounded-lg border border-[#D9D9D2]">
-                        {court.pricePeak.toLocaleString('es-CL')} / tanda
+                        {court.todayOccupancy || 0}% ocupada
                       </span>
                     </div>
 
