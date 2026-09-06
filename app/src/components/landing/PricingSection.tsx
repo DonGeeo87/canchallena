@@ -162,11 +162,11 @@ export const PricingSection: React.FC<PricingSectionProps> = ({ onNavigate }) =>
           </button>
         </div>
 
-        {/* Chip dedicado note — a pedido, setup + mensualidad */}
+        {/* Chip dedicado note — a pedido, setup único cubre el primer mes y desde el segundo se paga la mensualidad Pro */}
         <div className="mt-8 max-w-4xl mx-auto bg-[#FFFFFF] border border-[#7C3AED]/30 rounded-2xl p-5 text-sm text-[#62626A]">
-          <p className="font-bold text-[#7C3AED] mb-1">Número de WhatsApp propio (chip dedicado) — a pedido</p>
+          <p className="font-bold text-[#7C3AED] mb-1">Número de WhatsApp propio (chip dedicado) — a pedido, solo en Pro</p>
           <p className="text-xs leading-relaxed">
-            Si el club prefiere su propia línea WhatsApp con su marca e imagen, sin compartir número con otros clubes, lo cotizamos aparte: <strong className="text-[#101014]">setup de activación</strong> (entrega del chip, pareo y configuración del asistente) + una <strong className="text-[#101014]">mensualidad adicional</strong> por el mantenimiento del número dedicado. Disponible solo en el plan Pro. Contáctenos para su cotización.
+            Su propio número de WhatsApp con la marca de su club, sin compartir sesión con otros clubes. Incluido en el Plan Pro. <strong className="text-[#101014]">El primer mes se paga solo el setup de activación</strong> (entrega del chip, pareo y configuración del asistente) y <strong className="text-[#101014]">desde el segundo mes la mensualidad del Pro</strong>. Contáctenos para su cotización del setup.
           </p>
         </div>
 
