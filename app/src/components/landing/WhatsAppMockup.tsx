@@ -45,7 +45,7 @@ export const WhatsAppMockup: React.FC = () => {
       if (choiceText.includes('invitar')) {
         botReply = '🎾 ¡Listo! Enviamos la convocatoria por WhatsApp a Juan, Pedro y Carlos. En cuanto confirmen, el partido queda 4/4 en tu panel.';
       } else if (choiceText.includes('partido abierto')) {
-        botReply = '🎾 Buscando 1 jugador nivel 3.5 para completar tu partido. Encontramos a Andrés Edwards (94% compatibilidad). ¿Lo confirmamos?';
+        botReply = '🎾 Buscando 1 jugador nivel 4ª para completar tu partido. Encontramos a Andrés Edwards (100% compatibilidad). ¿Lo confirmamos?';
       } else {
         botReply = '🎾 ¡Perfecto! Tu cancha y luces están reservadas automáticamente. ¡Nos vemos en la cancha!';
       }

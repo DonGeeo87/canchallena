@@ -229,7 +229,7 @@ export const HeroCourt: React.FC<HeroCourtProps> = ({ onNavigate }) => {
                     JS
                   </div>
                   <span className="text-[10px] font-bold bg-white/90 px-1.5 py-0.5 rounded shadow-xs mt-1 text-[#101014]">
-                    Juan · 3.5
+                    Juan · 4ª
                   </span>
                 </div>
 
@@ -243,7 +243,7 @@ export const HeroCourt: React.FC<HeroCourtProps> = ({ onNavigate }) => {
                     PV
                   </div>
                   <span className="text-[10px] font-bold bg-white/90 px-1.5 py-0.5 rounded shadow-xs mt-1 text-[#101014]">
-                    Pedro · 3.0
+                    Pedro · 5ª
                   </span>
                 </div>
 
@@ -257,7 +257,7 @@ export const HeroCourt: React.FC<HeroCourtProps> = ({ onNavigate }) => {
                     CD
                   </div>
                   <span className="text-[10px] font-bold bg-white/90 px-1.5 py-0.5 rounded shadow-xs mt-1 text-[#101014]">
-                    Carlos · 3.2
+                    Carlos · 4ª
                   </span>
                 </div>
 
@@ -276,7 +276,7 @@ export const HeroCourt: React.FC<HeroCourtProps> = ({ onNavigate }) => {
                       </div>
                       <span className="text-[10px] font-extrabold bg-[#C7F000] px-2 py-0.5 rounded shadow-xs mt-1 text-[#101014] flex items-center gap-1">
                         <Sparkles className="w-2.5 h-2.5" />
-                        Andrés · 3.2
+                        Andrés · 4ª
                       </span>
                     </>
                   ) : (

@@ -166,26 +166,26 @@ export const ValleyHoursSection: React.FC = () => {
                 <span className="text-[10px] text-[#62626A]">Cupos confirmados</span>
               </div>
               <div className="bg-[#C7F000] p-3 rounded-xl border border-[#101014]/20 shadow-2xs font-extrabold text-[#101014]">
-                <span className="block">5. Reserva Pagada</span>
-                <span className="text-[10px] opacity-80">+$18.000 generados</span>
+                <span className="block">5. Cancha Llena</span>
+                <span className="text-[10px] opacity-80">Ocupación asegurada</span>
               </div>
             </div>
           </div>
 
-          {/* Bottom Revenue Summary */}
+          {/* Bottom Occupancy Summary */}
           <div className="bg-[#101014] rounded-2xl p-6 text-white flex flex-col sm:flex-row items-center justify-between gap-4">
             <div className="space-y-1 text-center sm:text-left">
               <span className="text-xs text-[#C7F000] font-bold uppercase tracking-wider">
-                Impacto Mensual Promedio por Club (4 Canchas)
+                Impacto en Ocupación por Club (4 Canchas)
               </span>
               <p className="text-sm text-[#D9D9D2]">
-                Llenar solo 2 tandas valle extras al día equivale a más de <strong className="text-white font-bold">$1.080.000 CLP</strong> adicionales al mes.
+                Llenar solo 2 tandas valle más al día significa que sus canchas <strong className="text-white font-bold">dejan de estar vacías</strong> en el horario de menor demanda.
               </p>
             </div>
             <div className="text-center sm:text-right shrink-0">
-              <span className="text-xs text-[#D9D9D2] block">Recuperación estimada</span>
-              <span className="text-2xl sm:text-3xl font-extrabold text-[#C7F000]">+$1.080.000</span>
-              <span className="text-[10px] text-gray-400 block">CLP / mes</span>
+              <span className="text-xs text-[#D9D9D2] block">Horas valle recuperadas</span>
+              <span className="text-2xl sm:text-3xl font-extrabold text-[#C7F000]">+2 tandas</span>
+              <span className="text-[10px] text-gray-400 block">por cancha / día</span>
             </div>
           </div>
 

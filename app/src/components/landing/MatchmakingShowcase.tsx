@@ -6,9 +6,9 @@ export const MatchmakingShowcase: React.FC = () => {
   const [matchStatus, setMatchStatus] = useState<'3_players' | '4_players'>('4_players');
 
   const confirmedPlayers = [
-    { id: 1, name: 'Juan Ignacio Silva', level: '3.5', pos: 'Drive (Derecha)', color: '#7C3AED', dir: 'desde Las Condes' },
-    { id: 2, name: 'Pedro Valenzuela', level: '3.0', pos: 'Revés', color: '#16A34A', dir: 'desde Vitacura' },
-    { id: 3, name: 'Carlos Domínguez', level: '3.2', pos: 'Drive', color: '#F59E0B', dir: 'desde Lo Barnechea' },
+    { id: 1, name: 'Juan Ignacio Silva', level: '4ª', pos: 'Drive (Derecha)', color: '#7C3AED', dir: 'desde Las Condes' },
+    { id: 2, name: 'Pedro Valenzuela', level: '5ª', pos: 'Revés', color: '#16A34A', dir: 'desde Vitacura' },
+    { id: 3, name: 'Carlos Domínguez', level: '4ª', pos: 'Drive', color: '#F59E0B', dir: 'desde Lo Barnechea' },
   ];
 
   return (
@@ -53,7 +53,7 @@ export const MatchmakingShowcase: React.FC = () => {
               <div className="flex items-center gap-2">
                 <span className="text-xs font-bold text-[#62626A]">Nivel Sugerido:</span>
                 <span className="px-2.5 py-1 rounded-lg bg-[#FFFFFF] border border-[#D9D9D2] text-xs font-extrabold text-[#101014]">
-                  3.0 — 3.5
+                  4ª — 5ª
                 </span>
                 <span
                   className={`px-3 py-1 rounded-full text-xs font-extrabold flex items-center gap-1 ${
@@ -99,7 +99,7 @@ export const MatchmakingShowcase: React.FC = () => {
                   JS
                 </div>
                 <div className="bg-white/95 px-2 py-0.5 rounded-md text-[10px] font-bold text-[#101014] shadow-2xs mt-1 text-center">
-                  Juan · 3.5
+                  Juan · 4ª
                   <span className="block text-[8px] text-[#62626A]">{confirmedPlayers[0].pos}</span>
                 </div>
               </div>
@@ -110,7 +110,7 @@ export const MatchmakingShowcase: React.FC = () => {
                   PV
                 </div>
                 <div className="bg-white/95 px-2 py-0.5 rounded-md text-[10px] font-bold text-[#101014] shadow-2xs mt-1 text-center">
-                  Pedro · 3.0
+                  Pedro · 5ª
                   <span className="block text-[8px] text-[#62626A]">{confirmedPlayers[1].pos}</span>
                 </div>
               </div>
@@ -121,7 +121,7 @@ export const MatchmakingShowcase: React.FC = () => {
                   CD
                 </div>
                 <div className="bg-white/95 px-2 py-0.5 rounded-md text-[10px] font-bold text-[#101014] shadow-2xs mt-1 text-center">
-                  Carlos · 3.2
+                  Carlos · 4ª
                   <span className="block text-[8px] text-[#62626A]">{confirmedPlayers[2].pos}</span>
                 </div>
               </div>
@@ -135,7 +135,7 @@ export const MatchmakingShowcase: React.FC = () => {
                     </div>
                     <div className="bg-[#C7F000] px-2 py-0.5 rounded-md text-[10px] font-extrabold text-[#101014] shadow-2xs mt-1 text-center flex items-center gap-1">
                       <Sparkles className="w-2.5 h-2.5" />
-                      Andrés · 3.2
+                      Andrés · 4ª
                     </div>
                   </div>
                 ) : (
@@ -159,7 +159,7 @@ export const MatchmakingShowcase: React.FC = () => {
                 onClick={() => setMatchStatus(matchStatus === '4_players' ? '3_players' : '4_players')}
                 className="font-bold text-xs px-3.5 py-1.5 rounded-xl bg-white border border-[#D9D9D2] hover:border-[#7C3AED] text-[#101014] transition-all shadow-2xs cursor-pointer"
               >
-                {matchStatus === '4_players' ? 'Quitar 4to jugador' : '⚡ Asignar Andrés Edwards (94%)'}
+                {matchStatus === '4_players' ? 'Quitar 4to jugador' : '⚡ Asignar Andrés Edwards (100%)'}
               </button>
             </div>
 
@@ -175,53 +175,63 @@ export const MatchmakingShowcase: React.FC = () => {
                     Cálculo de Afinidad
                   </span>
                   <h4 className="text-xl font-extrabold text-[#101014]">
-                    Compatibilidad: <span className="text-[#7C3AED]">94%</span>
+                    Compatibilidad: <span className="text-[#7C3AED]">100%</span>
                   </h4>
                 </div>
                 <div className="w-12 h-12 rounded-2xl bg-[#C7F000] flex items-center justify-center text-[#101014] font-black text-sm shadow-xs">
-                  94%
+                  100%
                 </div>
               </div>
 
-              {/* 4 Score Progress Bars */}
+              {/* 5 Score Progress Bars — alineadas al motor real (matchScore) */}
               <div className="space-y-3.5">
                 <div>
                   <div className="flex justify-between text-xs font-bold text-[#101014] mb-1">
-                    <span>Nivel Deportivo (3.0 a 3.5)</span>
-                    <span className="text-[#7C3AED]">96%</span>
+                    <span>Nivel deportivo · 4ª — 5ª · (peso 40%)</span>
+                    <span className="text-[#7C3AED]">100%</span>
                   </div>
                   <div className="h-2.5 w-full bg-[#E5E7EB] rounded-full overflow-hidden">
-                    <div className="h-full bg-[#7C3AED] rounded-full" style={{ width: '96%' }} />
+                    <div className="h-full bg-[#7C3AED] rounded-full" style={{ width: '100%' }} />
                   </div>
                 </div>
 
                 <div>
                   <div className="flex justify-between text-xs font-bold text-[#101014] mb-1">
-                    <span>Horario & Disponibilidad Hoy</span>
-                    <span className="text-[#7C3AED]">98%</span>
+                    <span>Días sin jugar · prioriza quien más espera · (peso 25%)</span>
+                    <span className="text-[#7C3AED]">100%</span>
                   </div>
                   <div className="h-2.5 w-full bg-[#E5E7EB] rounded-full overflow-hidden">
-                    <div className="h-full bg-[#7C3AED] rounded-full" style={{ width: '98%' }} />
+                    <div className="h-full bg-[#7C3AED] rounded-full" style={{ width: '100%' }} />
                   </div>
                 </div>
 
                 <div>
                   <div className="flex justify-between text-xs font-bold text-[#101014] mb-1">
-                    <span>Preferencia de Puesto (Revés/Drive)</span>
-                    <span className="text-[#7C3AED]">90%</span>
+                    <span>Disponibilidad en el horario · (peso 15%)</span>
+                    <span className="text-[#7C3AED]">100%</span>
                   </div>
                   <div className="h-2.5 w-full bg-[#E5E7EB] rounded-full overflow-hidden">
-                    <div className="h-full bg-[#7C3AED] rounded-full" style={{ width: '90%' }} />
+                    <div className="h-full bg-[#7C3AED] rounded-full" style={{ width: '100%' }} />
                   </div>
                 </div>
 
                 <div>
                   <div className="flex justify-between text-xs font-bold text-[#101014] mb-1">
-                    <span>Afinidad con Club Vitacura</span>
-                    <span className="text-[#7C3AED]">92%</span>
+                    <span>Historial de aceptación · (peso 10%)</span>
+                    <span className="text-[#7C3AED]">100%</span>
                   </div>
                   <div className="h-2.5 w-full bg-[#E5E7EB] rounded-full overflow-hidden">
-                    <div className="h-full bg-[#7C3AED] rounded-full" style={{ width: '92%' }} />
+                    <div className="h-full bg-[#7C3AED] rounded-full" style={{ width: '100%' }} />
+                  </div>
+                </div>
+
+                <div>
+                  <div className="flex justify-between text-xs font-bold text-[#101014] mb-1">
+                    <span>Preferencias del jugador · (peso 10%)</span>
+                    <span className="text-[#7C3AED]">100%</span>
+                  </div>
+                  <div className="h-2.5 w-full bg-[#E5E7EB] rounded-full overflow-hidden">
+                    <div className="h-full bg-[#7C3AED] rounded-full" style={{ width: '100%' }} />
                   </div>
                 </div>
               </div>
