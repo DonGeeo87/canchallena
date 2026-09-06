@@ -145,11 +145,22 @@ export const api = {
       const user: User = {
         id: data.admin?.id || 'admin',
         name: data.admin?.name || 'Administrador',
-        email: 'admin@canchallena.cl',
-        role: 'Club Owner & Manager',
+        email: data.admin?.email || 'admin@canchallena.cl',
+        role: data.admin?.role || 'club_admin',
       };
       localStorage.setItem('canchallena_user', JSON.stringify(user));
       return { success: true, token: data.token, user };
+    },
+    async impersonate(target: { target_admin_id?: string; target_club_id?: string; role: string }): Promise<User | null> {
+      // Solo un global puede impersonar. Devuelve el usuario impersonado o null.
+      try {
+        const data = await request<{ token: string; user: any }>('/auth/impersonate', { method: 'POST', body: JSON.stringify(target) }, false);
+        if (!data?.token) return null;
+        localStorage.setItem('canchallena_token', data.token);
+        const u: User = { id: data.user?.adminId || 'imp', name: data.user?.name || 'Impersonado', email: '', role: data.user?.role || 'club_admin' };
+        localStorage.setItem('canchallena_user', JSON.stringify(u));
+        return u;
+      } catch { return null; }
     },
     async register(_data?: { email?: string; password?: string; name?: string; clubName?: string }): Promise<{ success: boolean; token: string; user: User }> {
       // Registro no implementado en el backend aún (MVP login directo). Lanzar claro.

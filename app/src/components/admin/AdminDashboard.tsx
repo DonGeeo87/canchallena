@@ -50,6 +50,22 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [newMatchTime, setNewMatchTime] = useState('15:00');
   const [newMatchTargetLevel, setNewMatchTargetLevel] = useState('3.0 - 3.5');
 
+  // Impersonación (solo admin global puede cambiar de rol para pruebas)
+  const esGlobal = currentUser?.role === 'global';
+  const [rolPrueba, setRolPrueba] = useState<'club_admin' | 'member'>('club_admin');
+
+  const handleImpersonate = async (rol: 'club_admin' | 'member') => {
+    if (!esGlobal) return;
+    const r = await api.auth.impersonate({ target_club_id: 'club-piloto', role: rol });
+    if (r) {
+      setRolPrueba(rol);
+      triggerNotification(`Viendo como ${rol === 'club_admin' ? 'Dueño del Club' : 'Socio'}`);
+      loadData();
+    } else {
+      triggerNotification('No se pudo impersonar');
+    }
+  };
+
   // Load Dashboard Data
   const loadData = async () => {
     try {
@@ -183,11 +199,25 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
             {/* User Dropdown / Logout */}
             <div className="flex items-center gap-2 bg-[#F7F7F4] p-1.5 rounded-xl border border-[#D9D9D2]">
+              {esGlobal && (
+                <div className="flex items-center gap-1 text-xs">
+                  <span className="text-[10px] font-bold text-[#7C3AED] px-1">Ver como:</span>
+                  <select
+                    value={rolPrueba}
+                    onChange={(e) => handleImpersonate(e.target.value as 'club_admin' | 'member')}
+                    className="bg-white border border-[#D9D9D2] rounded-lg text-[11px] font-semibold px-1.5 py-1 focus:outline-none focus:border-[#7C3AED]"
+                  >
+                    <option value="club_admin">Dueño del Club</option>
+                    <option value="member">Socio</option>
+                  </select>
+                </div>
+              )}
               <div className="w-7 h-7 rounded-lg bg-[#7C3AED] text-white flex items-center justify-center text-xs font-bold">
                 {currentUser.name.slice(0, 2).toUpperCase()}
               </div>
               <span className="text-xs font-bold text-[#101014] hidden md:inline">
                 {currentUser.name}
+                {esGlobal && <span className="ml-1 text-[9px] bg-[#C7F000] text-[#101014] px-1 rounded font-bold">GLOBAL</span>}
               </span>
               <button
                 onClick={onLogout}
