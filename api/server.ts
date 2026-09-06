@@ -330,6 +330,58 @@ app.post(`${API_PREFIX}/players/registrar`, requireAuth, (req, res) => {
   res.status(201).json({ ok: true, jugador: { id, name: name, phone } })
 })
 
+// ---------- Import CSV de socios (el dueño carga su base de clientes) ----------
+// Body: { socios: [{ name, phone, categoria?, es_nuevo?, dias_sin_jugar? }] }
+// Crea o actualiza jugadores masivamente. Devuelve resumen de creados/actualizados/errores.
+app.post(`${API_PREFIX}/players/import`, requireAuth, (req, res) => {
+  const { clubId } = (req as any).authUser as AuthUser
+  const { socios } = req.body || {}
+  if (!Array.isArray(socios) || socios.length === 0) return res.status(400).json({ error: 'Enviar array de socios (name + phone)' })
+
+  let creados = 0, actualizados = 0, errores = 0
+  const detalleErrores: string[] = []
+  const upsert = db.prepare(`
+    INSERT INTO players (id, club_id, name, phone, categoria, es_nuevo, dias_sin_jugar, nivel, ficha_completa)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)
+    ON CONFLICT DO NOTHING
+  `)
+  const porTelefono = db.prepare(`SELECT id, name FROM players WHERE club_id = ? AND REPLACE(REPLACE(REPLACE(phone,'+',''),' ',''),'-','') LIKE ?`)
+
+  for (const s of socios) {
+    const name = String(s.name || '').trim()
+    const phone = String(s.phone || '').trim()
+    if (!name || !phone) { errores++; detalleErrores.push(`fila sin name/phone: ${JSON.stringify(s)}`); continue }
+
+    const digits = phone.replace(/[^0-9]/g, '')
+    const existente = porTelefono.get(clubId, `%${digits.slice(-9)}%`) as any
+    if (existente) {
+      // Actualizar nombre si cambió (y categoría/es_nuevo/dias si vienen)
+      const sets: string[] = []
+      const vals: any[] = []
+      if (s.name !== existente.name) { sets.push('name = ?'); vals.push(name) }
+      if (s.categoria) { sets.push('categoria = ?'); vals.push(String(s.categoria)) }
+      if (s.es_nuevo !== undefined) { sets.push('es_nuevo = ?'); vals.push(s.es_nuevo ? 1 : 0) }
+      if (s.dias_sin_jugar !== undefined) { sets.push('dias_sin_jugar = ?'); vals.push(s.dias_sin_jugar) }
+      if (sets.length) {
+        sets.push(`updated_at = datetime('now')`)
+        vals.push(existente.id)
+        db.prepare(`UPDATE players SET ${sets.join(', ')} WHERE id = ?`).run(...vals)
+      }
+      actualizados++
+    } else {
+      const id = randomUUID()
+      upsert.run(id, clubId, name, phone,
+        s.categoria || '6ª',
+        s.es_nuevo !== undefined ? (s.es_nuevo ? 1 : 0) : 1, // por defecto nuevos (6ª SIEMPRE juegan)
+        s.dias_sin_jugar || 0,
+        s.es_nuevo ? 'Nuevo' : (s.categoria ? 'Medio' : 'Nuevo'))
+      creados++
+    }
+  }
+  logBotEvent('import', 'socios_importados', { club_id: clubId, creados, actualizados, errores })
+  res.json({ ok: true, creados, actualizados, errores, detalleErrores: detalleErrores.slice(0, 10) })
+})
+
 // ---------- GESTIÓN DE DUPLAS / PAREJAS (pipeline determinista) ----------
 // El socio pide un compañero -> el backend invita AL CANDIDATO por WhatsApp ->
 // espera SI/NO (10 min) -> escala si no hay respuesta -> avisa al solicitante
