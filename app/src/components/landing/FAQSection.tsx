@@ -14,28 +14,28 @@ export const FAQSection: React.FC = () => {
       a: 'No. La gran ventaja de CanchaLlena es que sus jugadores interactúan directamente por WhatsApp, la herramienta que ya tienen instalada y usan a diario. Cero fricción de adopción.',
     },
     {
-      q: '¿Puedo seguir usando el mismo número de WhatsApp de mi club?',
-      a: 'Sí. Conectamos su línea oficial existente mediante un enlace seguro vía código QR. Sus clientes seguirán viendo su nombre, logo y número habitual.',
+      q: '¿Mis socios usan el número o una aplicación nueva?',
+      a: 'Sus socios interactúan por WhatsApp con el asistente de CanchaLlena. No instalan ninguna app, no crean cuentas ni ingresan tarjetas: reservan conversando, como ya lo hacen a diario.',
     },
     {
       q: '¿Qué ocurre si un jugador cancela su reserva a última hora?',
-      a: 'El sistema libera el cupo al instante y, si está activado el matchmaking, envía alertas automatizadas a jugadores compatibles en lista de espera para rellenar la cancha antes del inicio del turno.',
+      a: 'El sistema libera el cupo al instante y busca un reemplazo compatible por WhatsApp, escalando de nivel si hace falta, para que el partido no se caiga y la cancha no quede vacía.',
     },
     {
       q: '¿Cómo encuentra jugadores CanchaLlena para armar partidos?',
-      a: 'A través de los perfiles históricos y categorías (Nivel 2.5 a 5.0) de los jugadores de su club. El algoritmo evalúa nivel deportivo, horario de preferencia y cercanía para sugerir partidos equilibrados 4/4.',
+      a: 'Usa las categorías chilenas (3ª a 6ª) de cada socio, sus horarios de preferencia y su historial para armar partidos equilibrados 4/4. Los socios nuevos (6ª) siempre juegan, emparejados con un mejor, para que aprendan y vuelvan.',
     },
     {
-      q: '¿Puedo administrar varias canchas y sedes simultáneamente?',
-      a: 'Sí. Puede configurar desde 1 hasta más de 20 canchas con superficies diferenciadas (panorámica, techada, outdoor) y precios variables por día y hora.',
+      q: '¿Puedo administrar varias canchas?',
+      a: 'Sí, cada cancha con su nombre y precio por turno, y horarios de apertura definidos por día de la semana. El plan Club incluye hasta 6 canchas y el Pro canchas ilimitadas.',
     },
     {
       q: '¿Puedo intervenir manualmente en cualquier momento?',
-      a: 'Siempre. Usted y su equipo conservan el control total del panel. Pueden bloquear canchas para mantenimiento o torneos, modificar reservas o cambiar estados con un solo clic.',
+      a: 'Siempre. Usted y su equipo conservan el control total del panel: pueden editar canchas, horarios, socios o estados de reserva con un solo clic. El asistente toma los datos que usted carga.',
     },
     {
       q: '¿Qué sucede durante los 14 días de prueba gratis?',
-      a: 'Tiene acceso completo a todas las funciones del Plan Club: conexión de WhatsApp, matchmaking y panel en tiempo real. No le pedimos tarjeta de crédito para iniciar.',
+      a: 'Tiene acceso completo al Plan Club. No le pedimos tarjeta de crédito para iniciar.',
     },
   ];
 

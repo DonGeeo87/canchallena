@@ -6,18 +6,18 @@ export const HowItWorks: React.FC = () => {
   const steps = [
     {
       num: '01',
-      title: 'Configure su club en 5 minutos',
-      description: 'Defina la cantidad de canchas (cristal, panorámicas, techadas), sus tarifas por horario punta/valle y sus horas de operación.',
+      title: 'Configure su club en minutos',
+      description: 'Cargue sus canchas con su precio por turno, defina los horarios en los que abre cada día y agregue a sus socios por su WhatsApp.',
       icon: Settings,
-      details: ['3 canchas iniciales pre-cargadas', 'Precios diferenciados punta vs valle', 'Duración de turnos (60 / 90 min)'],
+      details: ['Alta de canchas con precio por turno', 'Horarios de apertura y cierre por día', 'Import de su base de socios'],
       color: '#7C3AED',
     },
     {
       num: '02',
-      title: 'Conecte su número de WhatsApp',
-      description: 'Sus jugadores continúan escribiendo al número oficial del club que ya tienen guardado en sus contactos. Sin cambiar de línea.',
+      title: 'Active su asistente por WhatsApp',
+      description: 'CanchaLlena atiende a sus socios por WhatsApp con un asistente del club: reservas, partidos y matchmaking en una conversación natural, sin que usted opere la agenda.',
       icon: MessageSquare,
-      details: ['Escaneo QR seguro en 30 segundos', 'Mensajes con el tono y branding de su club', 'Sin perder contacto con clientes'],
+      details: ['Asistente 24/7 que responde al instante', 'Los socios reservan conversando, no con apps', 'Usted supervisa todo desde su panel'],
       color: '#16A34A',
     },
     {

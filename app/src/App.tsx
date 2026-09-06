@@ -8,6 +8,7 @@ import { MatchmakingShowcase } from './components/landing/MatchmakingShowcase';
 import { ValleyHoursSection } from './components/landing/ValleyHoursSection';
 import { DashboardPreview } from './components/landing/DashboardPreview';
 import { HowItWorks } from './components/landing/HowItWorks';
+import { FuncionalidadesSection } from './components/landing/FuncionalidadesSection';
 import { NoAppSection } from './components/landing/NoAppSection';
 import { ValueCalculator } from './components/landing/ValueCalculator';
 import { PricingSection } from './components/landing/PricingSection';
@@ -98,6 +99,7 @@ export default function App() {
         <ValleyHoursSection />
         <DashboardPreview onNavigate={handleNavigate} />
         <HowItWorks />
+        <FuncionalidadesSection />
         <NoAppSection />
         <ValueCalculator onNavigate={handleNavigate} />
         <PricingSection onNavigate={handleNavigate} />
