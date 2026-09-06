@@ -12,6 +12,7 @@ import * as demo from './_lib/demo_engine.js'
 import { getPlayerStreak, getPartnerStruggle, recommendPartnerChange, getPlayerProgress, findPlayersByLevel, registerMatchResult, crearPlanProgreso } from './_lib/coach.js'
 import { ensureClubSlots, getClubAvailability, getClubAvailabilityMultiDay } from './_lib/slots_gen.js'
 import { iniciarDupla, responderDupla, timeoutDuplas, estadoDupla } from './_lib/pairs.js'
+import { crearPreferencia, getPago, PLANS } from './_lib/mercadopago.js'
 
 const app = express()
 app.use(helmet())
@@ -380,6 +381,40 @@ app.post(`${API_PREFIX}/players/import`, requireAuth, (req, res) => {
   }
   logBotEvent('import', 'socios_importados', { club_id: clubId, creados, actualizados, errores })
   res.json({ ok: true, creados, actualizados, errores, detalleErrores: detalleErrores.slice(0, 10) })
+})
+
+// ---------- MercadoPago Checkout Pro ----------
+// Endpoint público para crear la preferencia de pago de un plan.
+app.post(`${API_PREFIX}/checkout`, async (req, res) => {
+  try {
+    const { plan, club_name, club_id, email } = req.body || {}
+    const data = await crearPreferencia({ plan, clubName: club_name, clubId: club_id, email })
+    res.json(data)
+  } catch (e: any) {
+    if (String(e?.message || '').includes('MercadoPago no configurado')) {
+      return res.status(503).json({ error: 'MercadoPago no configurado aún' })
+    }
+    res.status(500).json({ error: String(e?.message || e) })
+  }
+})
+
+// Webhook de MercadoPago — responde 200 primero, luego verifica el pago.
+app.post(`${API_PREFIX}/webhook/mercadopago`, async (req, res) => {
+  res.status(200).json({ received: true })
+  const { type, data } = req.body || {}
+  if (type !== 'payment' || !data?.id) return
+  try {
+    const pago = await getPago(String(data.id))
+    if (pago?.status === 'approved') {
+      const extRef = String(pago.external_reference || pago.metadata?.plan || '')
+      logBotEvent('pago', 'plan_aprobado', { ref: extRef, monto: pago.transaction_amount, metadata: pago.metadata })
+    }
+  } catch (e) { console.error('MP webhook verify:', e) }
+})
+
+// Lista de planes (para que el frontend muestre precios)
+app.get(`${API_PREFIX}/plans`, (req, res) => {
+  res.json({ plans: PLANS })
 })
 
 // ---------- GESTIÓN DE DUPLAS / PAREJAS (pipeline determinista) ----------
