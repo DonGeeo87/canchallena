@@ -8,22 +8,6 @@ interface PricingSectionProps {
 export const PricingSection: React.FC<PricingSectionProps> = ({ onNavigate }) => {
   const plans = [
     {
-      id: 'starter',
-      name: 'STARTER',
-      tagline: 'Ideal para clubes pequeños o 1-2 canchas',
-      price: '$19.990',
-      period: '/ mes',
-      popular: false,
-      features: [
-        'Hasta 2 canchas',
-        'Bot de Reservas por WhatsApp',
-        'Panel de control básico',
-        'Gestión de horarios y precios',
-        'Soporte por email y chat',
-      ],
-      ctaText: 'Comenzar con Starter',
-    },
-    {
       id: 'club',
       name: 'CLUB',
       tagline: 'El favorito de los clubes en crecimiento',
@@ -41,7 +25,7 @@ export const PricingSection: React.FC<PricingSectionProps> = ({ onNavigate }) =>
         'Micrositio público digital del club',
         'Soporte prioritario por WhatsApp',
       ],
-      ctaText: 'Probar Plan Club Gratis',
+      ctaText: 'Probar Plan Club',
     },
     {
       id: 'pro',
@@ -50,6 +34,7 @@ export const PricingSection: React.FC<PricingSectionProps> = ({ onNavigate }) =>
       price: '$69.990',
       period: '/ mes',
       popular: false,
+      badge: 'PARA CRECER',
       features: [
         'Múltiples sedes y canchas ilimitadas',
         'Todo lo del Plan Club',
@@ -84,8 +69,8 @@ export const PricingSection: React.FC<PricingSectionProps> = ({ onNavigate }) =>
           </p>
         </div>
 
-        {/* 3 Pricing Cards Grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-stretch max-w-6xl mx-auto">
+        {/* 2 Pricing Cards Grid */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-stretch max-w-4xl mx-auto">
           {plans.map((plan) => (
             <div
               key={plan.id}
@@ -150,6 +135,26 @@ export const PricingSection: React.FC<PricingSectionProps> = ({ onNavigate }) =>
               </div>
             </div>
           ))}
+        </div>
+
+        {/* Founder Access Banner */}
+        <div className="mt-12 max-w-4xl mx-auto bg-[#101014] rounded-3xl p-6 sm:p-8 text-white flex flex-col sm:flex-row items-center justify-between gap-5">
+          <div className="space-y-1">
+            <span className="text-xs text-[#C7F000] font-black uppercase tracking-wider inline-flex items-center gap-2">
+              <Sparkles className="w-4 h-4" />
+              Acceso Fundadores — 50% OFF
+            </span>
+            <p className="text-sm text-[#F7F7F4] max-w-lg">
+              Primeros clubes en unirse con <strong className="text-[#C7F000]">50% de descuento durante 1 mes</strong> en el plan Club o Pro. Cupos limitados.
+            </p>
+          </div>
+          <button
+            onClick={() => onNavigate?.('/login')}
+            className="shrink-0 inline-flex items-center gap-2 bg-[#C7F000] hover:bg-[#B6DE00] text-[#101014] font-black text-sm px-6 py-3 rounded-xl transition-all active:scale-[0.98] cursor-pointer"
+          >
+            <span>Reclamar 50% OFF</span>
+            <ArrowRight className="w-4 h-4" />
+          </button>
         </div>
 
         {/* Reassurance Banner */}
