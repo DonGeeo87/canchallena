@@ -4,7 +4,7 @@ import helmet from 'helmet'
 import bcrypt from 'bcryptjs'
 import { randomUUID } from 'node:crypto'
 import { db } from './_lib/db.js'
-import { requireAuth, signToken, type AuthUser } from './_lib/auth.js'
+import { requireAuth, requireRole, signToken, type AuthUser } from './_lib/auth.js'
 import { armarPartido, buscarReemplazo, matchScore, rankCandidates } from './_lib/engine.js'
 import { sendWhatsApp, buildInviteMessage, buildReplacementMessage, getGowaConfig } from './_lib/gowa.js'
 import { getSession, setSession, deleteSession, isDuplicateMessage, markMessageProcessed, logBotEvent, tryReserveSlot, isBotEnabled, setBotEnabled } from './_lib/bot_session.js'
@@ -33,9 +33,9 @@ app.post(`${API_PREFIX}/auth/login`, (req, res) => {
 
   // Sin credenciales -> compat con demo (dev): primer admin
   if (!email || !password) {
-    const admin = db.prepare(`SELECT id, club_id, name FROM admins LIMIT 1`).get() as any
+    const admin = db.prepare(`SELECT id, club_id, name, role FROM admins LIMIT 1`).get() as any
     if (!admin) return res.status(400).json({ error: 'No hay admin; ejecuta db:seed' })
-    const user: AuthUser = { adminId: admin.id, clubId: admin.club_id, phone: '' }
+    const user: AuthUser = { adminId: admin.id, clubId: admin.club_id, phone: '', role: admin.role || 'club_admin' }
     return res.json({ token: signToken(user), admin })
   }
 
@@ -44,8 +44,8 @@ app.post(`${API_PREFIX}/auth/login`, (req, res) => {
   if (!admin || !admin.password_hash) return res.status(401).json({ error: 'Credenciales inválidas' })
   const ok = bcrypt.compareSync(password, admin.password_hash)
   if (!ok) return res.status(401).json({ error: 'Credenciales inválidas' })
-  const user: AuthUser = { adminId: admin.id, clubId: admin.club_id, phone: admin.phone || '' }
-  res.json({ token: signToken(user), admin: { id: admin.id, name: admin.name, email: admin.email, club_id: admin.club_id } })
+  const user: AuthUser = { adminId: admin.id, clubId: admin.club_id, phone: admin.phone || '', role: admin.role || 'club_admin', name: admin.name }
+  res.json({ token: signToken(user), admin: { id: admin.id, name: admin.name, email: admin.email, club_id: admin.club_id, role: admin.role } })
 })
 
 // ---------- Onboarding: registrar un club nuevo + su admin ----------
@@ -64,8 +64,27 @@ app.post(`${API_PREFIX}/auth/register`, (req, res) => {
   const hash = bcrypt.hashSync(admin_password, 10)
   db.prepare(`INSERT INTO admins (id, club_id, name, email, password_hash) VALUES (?, ?, ?, ?, ?)`)
     .run(adminId, clubId, admin_name || 'Admin', admin_email.toLowerCase(), hash)
-  const user: AuthUser = { adminId, clubId, phone: whatsapp || '' }
+  const user: AuthUser = { adminId, clubId, phone: whatsapp || '', role: 'club_admin' }
   res.status(201).json({ club_id: clubId, admin_id: adminId, token: signToken(user), message: 'Club y admin creados' })
+})
+
+// ---------- Impersonación (admin global) ----------
+// DonGeeo (rol global) puede generar un token con el rol de un dueño/socio para probar cada perfil.
+app.post(`${API_PREFIX}/auth/impersonate`, requireAuth, requireRole('global'), (req, res) => {
+  const { target_admin_id, target_club_id, role } = req.body || {}
+  const targetRole = (role === 'club_admin' || role === 'member') ? role : 'club_admin'
+  const admin = db.prepare(`SELECT id, club_id, name FROM admins WHERE id = ? OR club_id = ? LIMIT 1`).get(target_admin_id || '', target_club_id || '') as any
+  const clubId = (admin?.club_id as string) || String(target_club_id || '')
+  const adminId = (admin?.id as string) || String(target_admin_id || '')
+  if (!clubId && !adminId) return res.status(400).json({ error: 'Indica target_admin_id o target_club_id' })
+  const user: AuthUser = { adminId, clubId, phone: admin?.phone || '', role: targetRole, name: admin?.name }
+  res.json({ token: signToken(user), user: { adminId, clubId, role: targetRole, name: admin?.name } })
+})
+
+// Endpoint para saber mi rol actual (lo usa el dashboard para mostrar/u ocultar opciones)
+app.get(`${API_PREFIX}/auth/me`, requireAuth, (req, res) => {
+  const u = (req as any).authUser as AuthUser
+  res.json({ adminId: u.adminId, clubId: u.clubId, role: u.role, name: u.name || '' })
 })
 
 // ---------- Club (tenant) ----------

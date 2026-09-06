@@ -41,6 +41,7 @@ CREATE TABLE IF NOT EXISTS admins (
   email      TEXT UNIQUE,
   password_hash TEXT,
   phone      TEXT UNIQUE,
+  role       TEXT DEFAULT 'club_admin',  -- global (DonGeeo) | club_admin (dueño) | member (socio con acceso web)
   created_at TEXT DEFAULT (datetime('now'))
 );
 

@@ -2,14 +2,16 @@ import jwt from 'jsonwebtoken'
 import bcrypt from 'bcryptjs'
 import type { Request, Response, NextFunction } from 'express'
 
-// En el MVP la auth es simple: un admin por club, credencial admin/club.
-// Sin anticipos ni pagos en este sprint (decisión 29-Ago-2026).
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-cambiar-en-prod'
+
+export type Role = 'global' | 'club_admin' | 'member'
 
 export interface AuthUser {
   adminId: string
   clubId: string
   phone: string
+  role: Role
+  name?: string
 }
 
 export function signToken(user: AuthUser): string {
@@ -24,7 +26,7 @@ export function verifyToken(token: string): AuthUser | null {
   }
 }
 
-// Middleware: exige Authorization: Bearer <token>
+// Middleware: exige Authorization: Bearer ***
 export function requireAuth(req: Request, res: Response, next: NextFunction) {
   const header = req.headers.authorization
   if (!header?.startsWith('Bearer ')) {
@@ -36,4 +38,15 @@ export function requireAuth(req: Request, res: Response, next: NextFunction) {
   }
   ;(req as any).authUser = user
   next()
+}
+
+// Middleware: exige un rol específico (admin global o admin de club).
+export function requireRole(...roles: Role[]) {
+  return (req: Request, res: Response, next: NextFunction) => {
+    const user = (req as any).authUser as AuthUser
+    if (!user || !roles.includes(user.role)) {
+      return res.status(403).json({ error: 'No autorizado para esta acción' })
+    }
+    next()
+  }
 }
