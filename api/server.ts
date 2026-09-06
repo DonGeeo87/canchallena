@@ -680,8 +680,15 @@ app.post(`${API_PREFIX}/proactivo/fill`, async (req, res) => {
 
     const enPartido = confirmados.map(c => c.player_id)
 
-    // 1) Buscar socio libre del nivel objetivo (mejor match score)
-    let candidato = buscarReemplazo(clubId, { categoria: Object.keys(catRank).find(k=>catRank[k]===nivelObj)||'5ª' } as any, enPartido)
+    // -- DEDUP: NO re-invitar a quien ya tiene invitacion pendiente en ESTE partido
+    // (un jugador con invitacion 'pendiente' ya fue contactado por el proactivo o el flujo normal)
+    const invitadosPendientes = db.prepare(`
+      SELECT DISTINCT player_id FROM match_invitations WHERE open_match_id = ? AND status = 'pendiente'
+    `).all(m.id).map((r: any) => r.player_id)
+    const yaContactados = [...enPartido, ...invitadosPendientes]
+
+    // 1) Buscar socio libre del nivel objetivo (mejor match score), excluyendo a los ya contactados
+    let candidato = buscarReemplazo(clubId, { categoria: Object.keys(catRank).find(k=>catRank[k]===nivelObj)||'5ª' } as any, yaContactados)
 
     if (candidato) {
       // Enviar invitación proactiva
@@ -692,8 +699,8 @@ app.post(`${API_PREFIX}/proactivo/fill`, async (req, res) => {
       db.prepare(`INSERT INTO match_invitations (id, open_match_id, player_id, status) VALUES (?, ?, ?, 'pendiente')`).run(randomUUID(), m.id, candidato.id)
       resultados.push({ partido: m.id, cancha: m.court_name, faltaba: cupos, invitado: candidato.name, nivel: candidato.categoria, whatsapp: sent.ok ? 'enviado' : `fallo:${sent.error}` })
     } else {
-      // 2) No hay del nivel objetivo -> ampliar a todos los niveles disponibles
-      const todos = db.prepare(`SELECT id, name, phone, categoria, es_nuevo FROM players WHERE club_id=? AND id NOT IN (${enPartido.length ? enPartido.map(()=>'?').join(',') : "'__'"})`).all(clubId, ...(enPartido.length?enPartido:[])) as any[]
+      // 2) No hay del nivel objetivo -> ampliar a todos los niveles disponibles (excluyendo ya contactados)
+      const todos = db.prepare(`SELECT id, name, phone, categoria, es_nuevo FROM players WHERE club_id=? AND id NOT IN (${yaContactados.length ? yaContactados.map(()=>'?').join(',') : "'__'"})`).all(clubId, ...(yaContactados.length?yaContactados:[])) as any[]
       const candidatoFallo = todos.length ? { id: todos[0].id, name: todos[0].name, phone: todos[0].phone, categoria: todos[0].categoria } : null
       if (candidatoFallo) {
         const fecha = new Date(m.starts_at).toLocaleDateString('es-CL',{weekday:'long',day:'numeric',month:'long'})
